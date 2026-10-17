@@ -1,11 +1,69 @@
-<div align="center">
+# ChatLustora — Cloudflare Native Production Architecture
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+**Brand**: ChatLustora  
+**Tagline**: “Flirt Freely. Connect Deeply.”  
+**Target Audience**: Adults aged 18+, including Bangladeshi, Bengali-speaking, South Asian, and international communities.
 
-  <h1>Built with AI Studio</h2>
+---
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Architecture Overview
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+ChatLustora is built specifically for the Cloudflare edge ecosystem:
+- **Frontend**: Cloudflare Pages / static assets (`public/`).
+- **Backend**: Cloudflare Workers (`worker.js`).
+- **Real-Time Rooms**: Cloudflare Durable Objects (`room-chat.js`) handling authoritative WebSocket connections, room membership, and message broadcasting.
+- **Database**: Cloudflare D1 (SQLite-compatible serverless relational database).
 
-</div>
+---
+
+## Prerequisites & Installation
+
+1. Install Node.js (LTS version).
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+---
+
+## Local Development (Wrangler Dev)
+
+1. Copy `.dev.vars.example` to `.dev.vars`:
+   ```bash
+   cp .dev.vars.example .dev.vars
+   ```
+2. Run local Wrangler development server:
+   ```bash
+   npm run dev
+   ```
+
+---
+
+## Database Migration (Cloudflare D1)
+
+Apply the D1 database schema locally:
+```bash
+npm run db:migrate:local
+```
+
+Apply the schema to your production remote D1 database:
+```bash
+npm run db:migrate:remote
+```
+
+---
+
+## Production Deployment to Cloudflare
+
+1. Authenticate with Wrangler:
+   ```bash
+   npx wrangler login
+   ```
+2. Build frontend assets:
+   ```bash
+   npm run build
+   ```
+3. Deploy Worker and Durable Objects:
+   ```bash
+   npm run deploy
+   ```

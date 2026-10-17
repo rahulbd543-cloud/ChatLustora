@@ -1,0 +1,11 @@
+{
+  "name": "ChatLustora",
+  "description": "Adults-only social chat platform for Bangla, desi, and global communities featuring 23 rooms, real-time messaging, WebRTC calling, roulette matching, blog, and forum.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

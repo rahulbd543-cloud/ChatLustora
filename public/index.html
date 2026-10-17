@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatLustora — Flirt Freely. Connect Deeply.</title>
+  <meta name="description" content="Adult 18+ anonymous chat platform connecting communities in Bangladesh and worldwide. Flirt Freely. Connect Deeply.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="bg-[#0a0d14] text-gray-100 min-h-screen flex flex-col">
+  <!-- Top Navigation -->
+  <header class="border-b border-white/10 glass-panel sticky top-0 z-50">
+    <div class="container-site h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/20 font-bold text-xl text-black">
+          CL
+        </div>
+        <div>
+          <span class="font-extrabold text-lg tracking-wider bg-gradient-to-r from-orange-400 to-amber-200 bg-clip-text text-transparent">ChatLustora</span>
+          <span class="block text-xs text-orange-400/80 font-medium tracking-wide">Flirt Freely. Connect Deeply.</span>
+        </div>
+      </div>
+      <div id="nav-auth-area" class="flex items-center gap-3">
+        <!-- Injected via app.js -->
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Viewport -->
+  <main class="container-site py-10 max-lg:pb-2 flex-grow flex flex-col">
+    <!-- Landing / Room Directory View -->
+    <div id="view-directory" class="space-y-8">
+      <div class="text-center max-w-2xl mx-auto space-y-4">
+        <h1 class="text-4xl sm:text-5xl font-black tracking-tight text-white">
+          Flirt Freely. <span class="bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text text-transparent">Connect Deeply.</span>
+        </h1>
+        <p class="text-gray-400 text-sm sm:text-base">
+          Welcome to ChatLustora. Connect instantly with adult communities across Bangladesh, South Asia, and worldwide. 18+ Adults Only.
+        </p>
+      </div>
+
+      <!-- Room Categories -->
+      <div class="space-y-6">
+        <h2 class="text-xl font-bold border-b border-white/10 pb-2 text-orange-400">Authoritative Room Directory (23 Rooms)</h2>
+        <div id="room-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Room cards injected by app.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Chat View (Hidden by default) -->
+    <div id="view-chat" class="hidden flex-grow flex flex-col chat-shell h-[80vh] overflow-hidden">
+      <div class="p-4 border-b border-white/10 flex items-center justify-between bg-black/40">
+        <div class="flex items-center gap-3">
+          <button id="btn-back-directory" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold">
+            ← Rooms
+          </button>
+          <div>
+            <h3 id="active-room-title" class="font-bold text-white">Room Name</h3>
+            <p id="active-room-desc" class="text-xs text-gray-400">Room description</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-medium">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span id="room-presence-count">0 online</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="flex-grow flex overflow-hidden">
+        <!-- Messages Area -->
+        <div class="flex-grow flex flex-col bg-black/20">
+          <div id="message-container" class="flex-grow p-4 overflow-y-auto space-y-3">
+            <!-- Messages injected here -->
+          </div>
+          <div class="p-3 border-t border-white/10 bg-black/40">
+            <form id="message-form" class="flex gap-2">
+              <input 
+                type="text" 
+                id="message-input" 
+                placeholder="Type your message..." 
+                class="flex-grow bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 text-white"
+                autocomplete="off"
+                maxlength="1000"
+              >
+              <button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-black text-sm shadow-lg shadow-orange-500/20">
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Participants Sidebar -->
+        <div class="w-64 border-l border-white/10 bg-black/40 hidden lg:flex flex-col p-4">
+          <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Online Participants</h4>
+          <div id="participant-list" class="space-y-2 overflow-y-auto flex-grow text-sm">
+            <!-- Participants list injected -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Guest Entry Modal -->
+  <div id="modal-guest" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full p-6 rounded-2xl border border-white/10 shadow-2xl space-y-6">
+      <div class="text-center space-y-2">
+        <h2 class="text-2xl font-black text-white">Join ChatLustora</h2>
+        <p class="text-xs text-orange-400 font-semibold">“Flirt Freely. Connect Deeply.”</p>
+      </div>
+      <form id="guest-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Choose Nickname</label>
+          <input 
+            type="text" 
+            id="input-nickname" 
+            required 
+            minlength="2" 
+            maxlength="24"
+            placeholder="e.g. DhakaLover" 
+            class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-orange-500"
+          >
+        </div>
+        <div class="space-y-3 pt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" id="check-age" required class="mt-0.5 rounded border-white/10 bg-white/5 text-orange-500 focus:ring-0">
+            <span class="text-xs text-gray-300">I confirm that I am at least 18 years of age and eligible for adult social platforms.</span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" id="check-terms" required class="mt-0.5 rounded border-white/10 bg-white/5 text-orange-500 focus:ring-0">
+            <span class="text-xs text-gray-300">I agree to the Terms of Service, Privacy Policy, and Community Guidelines.</span>
+          </label>
+        </div>
+        <button type="submit" class="w-full py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 font-bold text-black text-sm shadow-lg shadow-orange-500/20">
+          Enter as Guest
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <footer class="border-t border-white/10 py-6 text-center text-xs text-gray-500">
+    <p>&copy; 2026 ChatLustora. All rights reserved. Adults 18+ only.</p>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #ff9100;
+  --color-brand-hover: #e07f00;
+  --color-brand-light: #fff3e0;
+  --color-live: #10b981;
+  --color-line: var(--color-line-val);
+  --color-raised: var(--color-raised-val);
+  --color-site-bg: var(--color-site-bg-val);
+  --color-text-main: var(--color-text-main-val);
+  --color-text-muted: var(--color-text-muted-val);
+  --font-sans: 'Plus Jakarta Sans', 'Hind Siliguri', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --color-site-bg-val: #f5f6fa;
+  --color-line-val: rgba(0, 0, 0, 0.08);
+  --color-raised-val: #ffffff;
+  --color-text-main-val: #14171f;
+  --color-text-muted-val: #606b7d;
+}
+
+.dark {
+  --color-site-bg-val: #0a0d14;
+  --color-line-val: rgba(255, 255, 255, 0.08);
+  --color-raised-val: #111520;
+  --color-text-main-val: #f0f3fa;
+  --color-text-muted-val: #8e9bb0;
+}
+
+/* Base custom styles */
+body {
+  background-color: var(--color-site-bg-val);
+  color: var(--color-text-main-val);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* ChatLustora Container & Frame specs from prompt */
+.container-site {
+  width: 100%;
+  max-width: 1440px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .container-site {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+.chat-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 5rem);
+  background: var(--color-raised-val);
+  border: 1px solid var(--color-line-val);
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(142, 155, 176, 0.25);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(142, 155, 176, 0.4);
+}

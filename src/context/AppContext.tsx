@@ -1,0 +1,426 @@
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { io, Socket } from 'socket.io-client';
+import { UserRole, ChatMessage, PrivateMessage, CallType } from '../../shared/types.js';
+import { Chatroom, INITIAL_CHATROOMS, getRoomById } from '../../shared/rooms.js';
+import { LOCALES, LocaleKey, TranslationKey } from '../../shared/locales.js';
+
+export interface ActiveCallState {
+  callId: string;
+  partnerId: string;
+  partnerNickname: string;
+  isIncoming: boolean;
+  type: CallType;
+  status: 'incoming' | 'calling' | 'connected' | 'ended';
+}
+
+export type NavTab = 'directory' | 'chat' | 'roulette' | 'blog' | 'forum' | 'moderation';
+export type AuthModalMode = 'guest' | 'login' | 'signup' | null;
+
+export interface AppContextType {
+  session: {
+    userId: string;
+    username: string;
+    email: string;
+  } | null;
+  register: (data: any) => Promise<any>;
+  login: (data: any) => Promise<any>;
+  logout: () => Promise<void>;
+  socket: Socket | null;
+  activeRoom: Chatroom;
+  setActiveRoom: (room: Chatroom) => void;
+  navigateRoom: (room: Chatroom) => void;
+  activeTab: NavTab;
+  setActiveTab: (tab: NavTab) => void;
+  lang: LocaleKey;
+  setLang: (lang: LocaleKey) => void;
+  t: (key: TranslationKey) => string;
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
+  toggleTheme: () => void;
+  globalPresence: {
+    totalConnected: number;
+    roomCounts: Record<string, number>;
+  };
+  // Auth modal
+  authModalMode: AuthModalMode;
+  openAuthModal: (mode: AuthModalMode, returnUrl?: string) => void;
+  closeAuthModal: () => void;
+  returnUrl: string | null;
+  // DMs
+  isDmDrawerOpen: boolean;
+  activeDmUserId: string | null;
+  activeDmPartnerNickname: string;
+  openDmWith: (userId: string, nickname?: string) => void;
+  openDmDrawer: () => void;
+  closeDm: () => void;
+  unreadDmCount: number;
+  incrementUnreadDm: () => void;
+  // WebRTC
+  activeCall: ActiveCallState | null;
+  startCall: (recipientId: string, recipientNickname: string, type: CallType) => void;
+  acceptCall: () => void;
+  declineCall: () => void;
+  endCall: () => void;
+  // Blocking & Modals
+  blockedUsers: Set<string>;
+  blockUser: (userId: string) => void;
+  unblockUser: (userId: string) => void;
+  isInfoModalOpen: boolean;
+  infoModalTab: 'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact';
+  openInfoModal: (tab: 'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact') => void;
+  closeInfoModal: () => void;
+}
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Theme state
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  // Language state
+  const [lang, setLang] = useState<LocaleKey>('en');
+
+  // Session state (no localStorage)
+  const [session, setSession] = useState<{
+    userId: string;
+    username: string;
+    email: string;
+  } | null>(null);
+
+  useEffect(() => {
+    // Check auth on mount
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.id) setSession(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  const register = async (data: any) => {
+    const res = await fetch('/api/auth/register', { method: 'POST', body: JSON.stringify(data), headers: {'Content-Type': 'application/json'} });
+    return await res.json();
+  };
+
+  const login = async (data: any) => {
+    const res = await fetch('/api/auth/login', { method: 'POST', body: JSON.stringify(data), headers: {'Content-Type': 'application/json'} });
+    const result = await res.json();
+    if (result.success) {
+      const me = await fetch('/api/auth/me');
+      setSession(await me.json());
+    }
+    return result;
+  };
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setSession(null);
+  };
+  
+  const [activeRoom, setActiveRoom] = useState<Chatroom>(INITIAL_CHATROOMS[0]);
+  const [activeTab, setActiveTab] = useState<NavTab>('directory');
+  
+  const [socket, setSocket] = useState<Socket | null>(null);
+
+  const [globalPresence, setGlobalPresence] = useState<{
+    totalConnected: number;
+    roomCounts: Record<string, number>;
+  }>({
+    totalConnected: 1,
+    roomCounts: {}
+  });
+
+  // Direct Messaging
+  const [isDmDrawerOpen, setIsDmDrawerOpen] = useState<boolean>(false);
+  const [activeDmUserId, setActiveDmUserId] = useState<string | null>(null);
+  const [activeDmPartnerNickname, setActiveDmPartnerNickname] = useState<string>('Chat Partner');
+  const [unreadDmCount, setUnreadDmCount] = useState<number>(0);
+
+  // Calls
+  const [activeCall, setActiveCall] = useState<ActiveCallState | null>(null);
+
+  // Blocked users
+  const [blockedUsers, setBlockedUsers] = useState<Set<string>>(new Set());
+
+  // Auth modal state
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>(null);
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+
+  const openAuthModal = (mode: AuthModalMode, url?: string) => {
+    setAuthModalMode(mode);
+    if (url) setReturnUrl(url);
+  };
+
+  const closeAuthModal = () => {
+    setAuthModalMode(null);
+  };
+
+  // Info modal
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+  const [infoModalTab, setInfoModalTab] = useState<'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact'>('terms');
+
+  // Translation helper
+  const t = useCallback((key: TranslationKey): string => {
+    return LOCALES[lang]?.[key] || LOCALES.en[key] || (key as string);
+  }, [lang]);
+
+  // Sync theme with HTML document class
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [theme]);
+
+  // URL Deep-linking initialization and popstate handling
+  useEffect(() => {
+    const resolveFromPath = (path: string) => {
+      const lower = path.toLowerCase();
+      if (lower === '/' || lower === '') {
+        setActiveTab('directory');
+        return;
+      }
+      if (lower === '/blog' || lower.startsWith('/blog/')) {
+        setActiveTab('blog');
+      } else if (lower === '/forum' || lower.startsWith('/forum/')) {
+        setActiveTab('forum');
+      } else if (lower === '/roulette-chat') {
+        const room = INITIAL_CHATROOMS.find(r => r.slug === '/roulette-chat');
+        if (room) {
+          if (!session) {
+            setReturnUrl(room.slug);
+            openAuthModal('guest', room.slug);
+            setActiveTab('directory');
+          } else {
+            setActiveRoom(room);
+            setActiveTab('roulette');
+          }
+        }
+      } else {
+        const matched = INITIAL_CHATROOMS.find(r => r.slug.toLowerCase() === lower);
+        if (matched) {
+          if (!session) {
+            setReturnUrl(matched.slug);
+            openAuthModal('guest', matched.slug);
+            setActiveTab('directory');
+          } else {
+            setActiveRoom(matched);
+            setActiveTab('chat');
+          }
+        }
+      }
+    };
+
+    resolveFromPath(window.location.pathname);
+
+    const onPopState = () => {
+      resolveFromPath(window.location.pathname);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [session]);
+
+  const navigateRoom = (room: Chatroom) => {
+    if (!session) {
+      setReturnUrl(room.slug);
+      openAuthModal('guest', room.slug);
+      return;
+    }
+    setActiveRoom(room);
+    window.history.pushState(null, '', room.slug);
+    if (room.features?.roulette) {
+      setActiveTab('roulette');
+    } else {
+      setActiveTab('chat');
+    }
+  };
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+
+  // WebSocket integration
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  
+  useEffect(() => {
+    if (!activeRoom) return;
+    
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${activeRoom.id}/ws`);
+    
+    socket.onopen = () => setWs(socket);
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'message') {
+        // Handle incoming messages
+      }
+    };
+    socket.onclose = () => setWs(null);
+    
+    return () => socket.close();
+  }, [activeRoom, session]);
+
+
+  // Handle active room joins over socket
+  useEffect(() => {
+    if (socket && socket.connected && activeRoom) {
+      socket.emit('room:join', { roomId: activeRoom.id });
+    }
+  }, [socket, activeRoom?.id]);
+
+  const openDmWith = (userId: string, nickname?: string) => {
+    setActiveDmUserId(userId);
+    if (nickname) {
+      setActiveDmPartnerNickname(nickname);
+    }
+    setIsDmDrawerOpen(true);
+  };
+
+  const openDmDrawer = () => {
+    setIsDmDrawerOpen(true);
+  };
+
+  const closeDm = () => {
+    setIsDmDrawerOpen(false);
+    setActiveDmUserId(null);
+  };
+
+  const incrementUnreadDm = () => {
+    setUnreadDmCount(prev => prev + 1);
+  };
+
+  const startCall = (recipientId: string, recipientNickname: string, type: CallType) => {
+    if (!socket || !recipientId) return;
+    const callId = `call-${Date.now()}`;
+    socket.emit('call:invite', { recipientId, type });
+    setActiveCall({
+      callId,
+      partnerId: recipientId,
+      partnerNickname: recipientNickname,
+      isIncoming: false,
+      type,
+      status: 'calling'
+    });
+  };
+
+  const acceptCall = () => {
+    if (!socket || !activeCall) return;
+    socket.emit('call:accept', {
+      callId: activeCall.callId,
+      callerId: activeCall.partnerId
+    });
+    setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
+  };
+
+  const declineCall = () => {
+    if (!socket || !activeCall) return;
+    socket.emit('call:decline', {
+      callId: activeCall.callId,
+      callerId: activeCall.partnerId
+    });
+    setActiveCall(null);
+  };
+
+  const endCall = () => {
+    if (socket && activeCall) {
+      socket.emit('call:hangup', { toUserId: activeCall.partnerId });
+    }
+    setActiveCall(null);
+  };
+
+  const blockUser = (userId: string) => {
+    setBlockedUsers(prev => new Set(prev).add(userId));
+    fetch('/api/user/block', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ targetId: userId })
+    }).catch(() => {});
+  };
+
+  const unblockUser = (userId: string) => {
+    setBlockedUsers(prev => {
+      const next = new Set(prev);
+      next.delete(userId);
+      return next;
+    });
+    fetch('/api/user/unblock', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ targetId: userId })
+    }).catch(() => {});
+  };
+
+  const openInfoModal = (tab: 'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact') => {
+    setInfoModalTab(tab);
+    setIsInfoModalOpen(true);
+  };
+
+  const closeInfoModal = () => {
+    setIsInfoModalOpen(false);
+  };
+
+  return (
+    <AppContext.Provider
+      value={{
+        session,
+        register,
+        login,
+        logout,
+        socket,
+        activeRoom,
+        setActiveRoom,
+        navigateRoom,
+        activeTab,
+        setActiveTab,
+        lang,
+        setLang,
+        t,
+        theme,
+        setTheme,
+        toggleTheme,
+        globalPresence,
+        isDmDrawerOpen,
+        activeDmUserId,
+        activeDmPartnerNickname,
+        openDmWith,
+        openDmDrawer,
+        closeDm,
+        unreadDmCount,
+        incrementUnreadDm,
+        activeCall,
+        startCall,
+        acceptCall,
+        declineCall,
+        endCall,
+        blockedUsers,
+        blockUser,
+        unblockUser,
+        isInfoModalOpen,
+        infoModalTab,
+        openInfoModal,
+        closeInfoModal,
+        authModalMode,
+        openAuthModal,
+        closeAuthModal,
+        returnUrl
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+};
