@@ -20,6 +20,7 @@ binding = "DB"
 database_name = "chatlustora-staging-db"
 database_id = "b5de7d6e-d425-443b-95f7-414c224445fd"
 
+
 [[env.staging.migrations]]
 tag = "v2-staging"
 new_sqlite_classes = ["RoomDO", "CoordinatorDO"]
@@ -33,3 +34,17 @@ bindings = [
 
 
 
+
+
+
+[[env.staging.durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+[[env.staging.durable_objects.bindings]]
+name = "COORDINATOR"
+class_name = "CoordinatorDO"
+
+[[env.staging.migrations]]
+tag = "v1-staging"
+new_sqlite_classes = ["RoomDO", "CoordinatorDO"]
