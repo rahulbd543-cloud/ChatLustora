@@ -35,6 +35,7 @@ export function calculateAge(dobString: string): number {
   const dob = new Date(dobString);
   if (isNaN(dob.getTime())) return -1;
   const today = new Date();
+  if (dob > today) return -1;
   let age = today.getFullYear() - dob.getFullYear();
   const m = today.getMonth() - dob.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
@@ -70,6 +71,9 @@ export function validateSessionCreation(
   }
 
   const age = calculateAge(dateOfBirth);
+  if (age < 0) {
+    return { error: 'Invalid or future date of birth provided.' };
+  }
   if (age < 18) {
     return { error: 'Access denied. You must be at least 18 years old to register and participate on ChatLustora.' };
   }
@@ -96,8 +100,7 @@ export function createGuestSession(
   gender: GenderType,
   dateOfBirth: string,
   isGenderVisible: boolean = true,
-  ip?: string,
-  role: UserRole = 'guest'
+  ip?: string
 ): UserSession {
   const sessionId = crypto.randomUUID();
   const userId = `usr_${crypto.randomBytes(8).toString('hex')}`;
@@ -109,7 +112,7 @@ export function createGuestSession(
     sessionId,
     userId,
     nickname,
-    role,
+    role: 'guest',
     isAdultConfirmed: true,
     termsAccepted: true,
     gender,

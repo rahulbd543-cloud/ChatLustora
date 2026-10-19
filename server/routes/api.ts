@@ -52,13 +52,8 @@ apiRouter.post('/auth/session', (req: Request, res: Response) => {
     return;
   }
 
-  // Allow test admin role if secret key provided or default to guest
-  let role: UserRole = 'guest';
-  if (roleKey === 'lustora-mod-2026' || roleKey === 'admin') {
-    role = 'admin';
-  } else if (roleKey === 'mod') {
-    role = 'moderator';
-  }
+  // Public session creation always assigns guest role securely
+  const role: UserRole = 'guest';
 
   const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
   const genderVisible = isGenderVisible !== undefined ? Boolean(isGenderVisible) : true;
@@ -67,8 +62,7 @@ apiRouter.post('/auth/session', (req: Request, res: Response) => {
     validation.gender!,
     validation.validatedDob!,
     genderVisible,
-    clientIp,
-    role
+    clientIp
   );
 
   // Set secure HTTP-only cookie

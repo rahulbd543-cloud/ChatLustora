@@ -109,6 +109,61 @@ describe('Guest Entry and 18+ Adult Policy Validation Tests', () => {
   });
 });
 
+describe('Strict 18+ Age Verification & Privilege Escalation Regression Tests', () => {
+  test('Public guest session creation always assigns guest role', () => {
+    const session = createGuestSession('TestUser', 'prefer-not-to-say', '1995-01-01', true, '127.0.0.1');
+    assert.equal(session.role, 'guest', 'Public session creation must always assign guest role');
+  });
+
+  test('Rejects missing date of birth', () => {
+    const res = validateSessionCreation('ValidNick', true, true, 'male', '');
+    assert.ok(res.error);
+    assert.match(res.error, /Date of birth is required/);
+  });
+
+  test('Rejects invalid date of birth format', () => {
+    const res = validateSessionCreation('ValidNick', true, true, 'male', 'invalid-date');
+    assert.ok(res.error);
+  });
+
+  test('Rejects future date of birth', () => {
+    const futureDate = new Date();
+    futureDate.setFullYear(futureDate.getFullYear() + 1);
+    const dobStr = futureDate.toISOString().split('T')[0];
+    const res = validateSessionCreation('ValidNick', true, true, 'male', dobStr);
+    assert.ok(res.error);
+    assert.match(res.error, /Invalid or future/);
+  });
+
+  test('Rejects user under 18 years old (17 years)', () => {
+    const minorDate = new Date();
+    minorDate.setFullYear(minorDate.getFullYear() - 17);
+    const dobStr = minorDate.toISOString().split('T')[0];
+    const res = validateSessionCreation('ValidNick', true, true, 'male', dobStr);
+    assert.ok(res.error);
+    assert.match(res.error, /at least 18 years old/);
+  });
+
+  test('Accepts user turning 18 today', () => {
+    const exact18Date = new Date();
+    exact18Date.setFullYear(exact18Date.getFullYear() - 18);
+    const dobStr = exact18Date.toISOString().split('T')[0];
+    const res = validateSessionCreation('ValidNick', true, true, 'male', dobStr);
+    assert.equal(res.error, undefined);
+    assert.equal(res.nickname, 'ValidNick');
+  });
+
+  test('Rejects user who has not yet reached their 18th birthday this year', () => {
+    const almost18Date = new Date();
+    almost18Date.setFullYear(almost18Date.getFullYear() - 18);
+    almost18Date.setMonth(almost18Date.getMonth() + 3); // birthday 3 months in future
+    const dobStr = almost18Date.toISOString().split('T')[0];
+    const res = validateSessionCreation('ValidNick', true, true, 'male', dobStr);
+    assert.ok(res.error);
+    assert.match(res.error, /at least 18 years old/);
+  });
+});
+
 describe('Database and Moderation Store Tests', () => {
   test('Room message bounds and retrieval', () => {
     const msgs = dbStore.getRoomMessages('room-1', 10);

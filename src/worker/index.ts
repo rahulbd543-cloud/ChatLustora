@@ -50,18 +50,18 @@ app.get('/api/rooms/:roomId/ws', async (c) => {
     .first();
   const nickname = (user?.username as string) || `User_${String(session.user_id).slice(-4)}`;
 
-  // Upgrade and pass authenticated user metadata to RoomDO
+  // Upgrade and pass authenticated user metadata to RoomDO using proper Headers cloning
   const id = c.env.ROOMS.idFromName(canonicalRoom.id);
   const obj = c.env.ROOMS.get(id);
+  const requestHeaders = new Headers(c.req.raw.headers);
+  requestHeaders.set('x-user-id', session.user_id as string);
+  requestHeaders.set('x-user-nickname', nickname);
+  requestHeaders.set('x-user-role', 'member');
+  requestHeaders.set('x-user-avatar', session.user_id as string);
+  requestHeaders.set('x-room-id', canonicalRoom.id);
+
   const newRequest = new Request(c.req.raw, {
-    headers: {
-      ...c.req.raw.headers,
-      'x-user-id': session.user_id as string,
-      'x-user-nickname': nickname,
-      'x-user-role': 'member',
-      'x-user-avatar': session.user_id as string,
-      'x-room-id': canonicalRoom.id
-    }
+    headers: requestHeaders
   });
   return obj.fetch(newRequest);
 });
@@ -121,8 +121,10 @@ app.get('/api/roulette/ws', async (c) => {
   // Upgrade and pass authenticated user ID to DO
   const id = c.env.COORDINATOR.idFromName('global');
   const obj = c.env.COORDINATOR.get(id);
+  const requestHeaders = new Headers(c.req.raw.headers);
+  requestHeaders.set('x-user-id', session.user_id as string);
   const newRequest = new Request(c.req.raw, {
-    headers: { ...c.req.raw.headers, 'x-user-id': session.user_id as string }
+    headers: requestHeaders
   });
   return obj.fetch(newRequest);
 });
