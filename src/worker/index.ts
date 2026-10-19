@@ -218,14 +218,41 @@ app.post('/api/auth/logout', async (c) => {
   return c.json({ success: true }, 200, { 'Set-Cookie': 'session_id=; Max-Age=0' });
 });
 
+
 app.get('/api/auth/me', async (c) => {
-  const sessionId = c.req.header('cookie')?.split('session_id=')[1]?.split(';')[0];
-  if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
-  const session = await c.env.DB.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?').bind(sessionId, Date.now()).first();
-  if (!session) return c.json({ error: 'Unauthorized' }, 401);
-  const user = await c.env.DB.prepare('SELECT id, username, email FROM users WHERE id = ?').bind(session.user_id).first();
+  const cookieHeader = c.req.header('cookie') || '';
+
+  const sessionId = cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('session_id='))
+    ?.slice('session_id='.length);
+
+  if (!sessionId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const session = await c.env.DB
+    .prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?')
+    .bind(sessionId, Date.now())
+    .first<{ user_id: string }>();
+
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const user = await c.env.DB
+    .prepare('SELECT id, username, email FROM users WHERE id = ?')
+    .bind(session.user_id)
+    .first();
+
+  if (!user) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   return c.json(user);
 });
+
 
 export { RoomDO } from './RoomDO';
 export { CoordinatorDO } from './CoordinatorDO';
