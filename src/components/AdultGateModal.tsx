@@ -16,8 +16,6 @@ export const AdultGateModal: React.FC = () => {
   const [isGenderVisible, setIsGenderVisible] = useState(true);
   const [isAdultConfirmed, setIsAdultConfirmed] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [roleKey, setRoleKey] = useState('');
-  const [showRoleKey, setShowRoleKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,34 +46,11 @@ export const AdultGateModal: React.FC = () => {
     setError(null);
 
     if (mode === 'login') {
-      if (!nickname.trim() && !email.trim()) {
-        setError('Please enter your nickname or email.');
-        return;
-      }
-      setLoading(true);
-      try {
-        // Authenticate login via session API with roleKey or nickname
-        const res = await fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nickname: nickname.trim() || email.split('@')[0] || 'MemberUser',
-            gender,
-            dateOfBirth: dateOfBirth || '2000-01-01',
-            isAdultConfirmed: true,
-            termsAccepted: true,
-            roleKey: roleKey.trim() || (nickname.toLowerCase().includes('admin') ? 'admin' : undefined)
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Login failed.');
-        setSession(data.session);
-        closeAuthModal();
-      } catch (err: any) {
-        setError(err.message || 'Login failed.');
-      } finally {
-        setLoading(false);
-      }
+      setError(
+        lang === 'bn'
+          ? 'সদস্য লগইন বর্তমানে উপলব্ধ নয়। অনুগ্রহ করে নিশ্চিত বয়স যাচাই করে গেস্ট এন্ট্রি ব্যবহার করুন।'
+          : 'Member account login requires a registered database account. Please use Guest Entry with 18+ age verification for instant chat.'
+      );
       return;
     }
 
@@ -129,8 +104,7 @@ export const AdultGateModal: React.FC = () => {
           dateOfBirth,
           isGenderVisible,
           isAdultConfirmed,
-          termsAccepted,
-          roleKey: roleKey.trim() || undefined
+          termsAccepted
         })
       });
 
@@ -258,25 +232,7 @@ export const AdultGateModal: React.FC = () => {
                 />
               </div>
 
-              {/* Moderator Key Option */}
-              <div className="flex flex-col gap-1 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setShowRoleKey(!showRoleKey)}
-                  className="text-[11px] text-text-muted hover:text-text-main underline self-start"
-                >
-                  {showRoleKey ? 'Hide Admin/Moderator key' : 'Testing as Moderator? (Optional)'}
-                </button>
-                {showRoleKey && (
-                  <input
-                    type="password"
-                    value={roleKey}
-                    onChange={e => setRoleKey(e.target.value)}
-                    placeholder="Enter secret key (e.g. lustora-mod-2026)"
-                    className="mt-1 px-3 py-2 rounded-lg bg-black/10 dark:bg-white/5 border border-line focus:border-brand text-xs font-mono"
-                  />
-                )}
-              </div>
+
             </>
           ) : (
             /* Guest or Signup Form (requires gender, DOB 18+, terms) */
