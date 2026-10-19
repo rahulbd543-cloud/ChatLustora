@@ -129,9 +129,32 @@ app.get('/api/roulette/ws', async (c) => {
   return obj.fetch(newRequest);
 });
 
+function calculateAge(dobString: string): number {
+  const dob = new Date(dobString);
+  if (isNaN(dob.getTime())) return -1;
+  const today = new Date();
+  if (dob > today) return -1;
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age;
+}
+
 app.post('/api/auth/register', async (c) => {
-  const { username, email, password } = await c.req.json();
-  if (!username || !email || !password) return c.json({ error: 'Missing fields' }, 400);
+  const { username, email, password, dateOfBirth } = await c.req.json();
+  if (!username || !email || !password || !dateOfBirth) {
+    return c.json({ error: 'Missing required fields including date of birth' }, 400);
+  }
+
+  const age = calculateAge(dateOfBirth);
+  if (age < 0) {
+    return c.json({ error: 'Invalid or future date of birth' }, 400);
+  }
+  if (age < 18) {
+    return c.json({ error: 'Access denied. You must be at least 18 years old to register.' }, 403);
+  }
 
   const hash = await hashPassword(password);
   try {
