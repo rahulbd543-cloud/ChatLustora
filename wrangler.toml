@@ -18,7 +18,3 @@ class_name = "RoomDO"
 [[durable_objects.bindings]]
 name = "COORDINATOR"
 class_name = "CoordinatorDO"
-
-[[durable_objects.bindings]]
-name = "DB"
-class_name = "RoomDO"

@@ -30,10 +30,14 @@ CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
   sender_id TEXT NOT NULL,
+  sender_nickname TEXT,
+  sender_role TEXT,
   text TEXT NOT NULL,
   timestamp INTEGER NOT NULL,
   FOREIGN KEY (room_id) REFERENCES rooms(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_messages_room_timestamp ON messages(room_id, timestamp DESC);
 
 -- Conversations
 CREATE TABLE IF NOT EXISTS conversations (

@@ -194,6 +194,8 @@ export function setupSocketServer(io: SocketIOServer) {
         senderNickname: meta.nickname,
         senderRole: (meta.role as any) || 'guest',
         senderAvatarSeed: session.avatarSeed,
+        senderGender: session.gender || 'prefer-not-to-say',
+        senderIsGenderVisible: session.isGenderVisible ?? true,
         text: escapeHtml(cleanText),
         timestamp: now
       };

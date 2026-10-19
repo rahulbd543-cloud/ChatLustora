@@ -28,13 +28,13 @@ import {
 export const RoomDirectory: React.FC = () => {
   const { navigateRoom, setActiveTab, globalPresence, openInfoModal, openAuthModal, session, t, lang } = useApp();
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<RoomCategory>('All');
+  const [selectedCategory, setSelectedCategory] = useState<RoomCategory | 'all'>('all');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Filter 23 canonical rooms
   const filteredRooms = useMemo(() => {
     return INITIAL_CHATROOMS.filter(room => {
-      if (selectedCategory !== 'All' && room.category !== selectedCategory) {
+      if (selectedCategory !== 'all' && room.category !== selectedCategory && room.tag !== selectedCategory) {
         return false;
       }
       if (search.trim()) {
@@ -42,7 +42,7 @@ export const RoomDirectory: React.FC = () => {
         const matchName = room.name.toLowerCase().includes(query);
         const matchDesc = room.description.toLowerCase().includes(query);
         const matchLang = room.language.toLowerCase().includes(query);
-        const matchTags = room.tags.some(t => t.toLowerCase().includes(query));
+        const matchTags = (room.tags || [room.tag]).some((t: string) => t.toLowerCase().includes(query));
         const matchSlug = room.slug.toLowerCase().includes(query);
         return matchName || matchDesc || matchLang || matchTags || matchSlug;
       }
@@ -389,18 +389,18 @@ export const RoomDirectory: React.FC = () => {
           {/* Category Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
             {CATEGORIES.map(cat => {
-              const isSelected = selectedCategory === cat;
+              const isSelected = selectedCategory === cat.id;
               return (
                 <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id as RoomCategory | 'all')}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-brand text-white shadow-sm shadow-brand/25'
                       : 'bg-black/5 dark:bg-white/5 text-text-muted hover:text-text-main hover:bg-black/10 dark:hover:bg-white/10 border border-line'
                   }`}
                 >
-                  {cat}
+                  {cat.name}
                 </button>
               );
             })}
@@ -491,7 +491,7 @@ export const RoomDirectory: React.FC = () => {
             <Users className="w-10 h-10 opacity-30 text-brand" />
             <p className="text-sm font-semibold">No chatrooms found matching "{search}"</p>
             <button
-              onClick={() => { setSearch(''); setSelectedCategory('All'); }}
+              onClick={() => { setSearch(''); setSelectedCategory('all'); }}
               className="text-xs text-brand hover:underline font-bold mt-1 cursor-pointer"
             >
               Reset Filters

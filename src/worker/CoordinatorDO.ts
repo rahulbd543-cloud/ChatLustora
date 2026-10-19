@@ -15,7 +15,7 @@ export class CoordinatorDO {
     server.accept();
     this.sessions.set(userId, server);
 
-    server.addEventListener('message', async (event) => {
+    server.addEventListener('message', async (event: any) => {
       try {
         const data = JSON.parse(event.data as string);
         if (data.type === 'join') {
@@ -24,6 +24,8 @@ export class CoordinatorDO {
           await this.handleSkip(userId);
         } else if (data.type === 'signal') {
           await this.handleSignal(userId, data);
+        } else if (data.type === 'message') {
+          await this.handleMessage(userId, data);
         }
       } catch (e) {}
     });
@@ -73,14 +75,34 @@ export class CoordinatorDO {
     if (!match) return;
 
     // Validate signal message structure
-    if (!['offer', 'answer', 'ice-candidate'].includes(data.signalType)) return;
+    const allowedSignals = ['offer', 'answer', 'ice-candidate', 'call-ended', 'call-declined'];
+    if (!allowedSignals.includes(data.signalType)) return;
+
+    // Size limit protection
+    if (data.payload && JSON.stringify(data.payload).length > 65536) return;
 
     // Forward signaling to partner
     this.sessions.get(match.partnerId)?.send(JSON.stringify({
       type: 'signal',
       signalType: data.signalType,
       payload: data.payload,
-      senderId: userId
+      senderId: userId,
+      matchId: match.matchId
+    }));
+  }
+
+  async handleMessage(userId: string, data: any) {
+    const match = await this.state.storage.get<{ matchId: string, partnerId: string }>(`match:${userId}`);
+    if (!match) return;
+
+    if (typeof data.text !== 'string' || !data.text.trim()) return;
+    const cleanText = data.text.trim().substring(0, 1000);
+
+    this.sessions.get(match.partnerId)?.send(JSON.stringify({
+      type: 'message',
+      text: cleanText,
+      senderNickname: data.senderNickname || 'Partner',
+      timestamp: Date.now()
     }));
   }
 }

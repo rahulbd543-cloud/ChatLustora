@@ -2,12 +2,15 @@
  * ChatLustora Authoritative Room Directory (23 Rooms)
  */
 
+export type RoomCategory = 'General' | 'Adult' | 'International' | 'Social' | 'Regional';
+
 export interface Chatroom {
   id: string;
   name: string;
   slug: string;
-  tag: 'General' | 'Adult' | 'International' | 'Social' | 'Regional';
+  tag: RoomCategory;
   category?: string;
+  tags?: string[];
   language: string;
   description: string;
   isAdult?: boolean;

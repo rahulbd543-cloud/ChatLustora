@@ -14,6 +14,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { apiRouter } from './server/routes/api.js';
 import { seoRouter } from './server/routes/seo.js';
 import { setupSocketServer } from './server/socket.js';
+import { setupRoomWebSocket } from './server/roomWs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +48,7 @@ async function startServer() {
   });
 
   setupSocketServer(io);
+  setupRoomWebSocket(server);
 
   // SEO & API Routes
   app.use('/', seoRouter);

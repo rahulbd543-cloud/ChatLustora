@@ -2,6 +2,7 @@
  * Shared Type Definitions for ChatLustora
  */
 
+export type UserRole = 'guest' | 'member' | 'moderator' | 'admin';
 export type GenderType = 'male' | 'female' | 'non-binary' | 'prefer-not-to-say';
 
 export interface UserSession {

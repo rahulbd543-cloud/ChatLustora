@@ -53,6 +53,8 @@ class ChatLustoraStore {
           senderNickname: 'ChatLustora System',
           senderRole: 'admin',
           senderAvatarSeed: 'lustora-bot',
+          senderGender: 'prefer-not-to-say',
+          senderIsGenderVisible: false,
           text: `Welcome to ${room.name}! This is an adult (18+) moderated space. Flirt freely, connect deeply, and please respect consent and community guidelines.`,
           timestamp: Date.now() - 3600000,
           isSystem: true
@@ -67,6 +69,9 @@ class ChatLustoraStore {
         senderId: 'system',
         senderNickname: 'System',
         senderRole: 'admin',
+        senderAvatarSeed: 'lustora-bot',
+        senderGender: 'prefer-not-to-say',
+        senderIsGenderVisible: false,
         text: 'Welcome to room-1 test room',
         timestamp: Date.now()
       }

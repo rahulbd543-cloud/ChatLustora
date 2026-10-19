@@ -16,12 +16,21 @@ export interface ActiveCallState {
 export type NavTab = 'directory' | 'chat' | 'roulette' | 'blog' | 'forum' | 'moderation';
 export type AuthModalMode = 'guest' | 'login' | 'signup' | null;
 
+export interface AppSession {
+  userId: string;
+  username: string;
+  nickname: string;
+  email?: string;
+  role: UserRole;
+  token?: string;
+  avatarSeed: string;
+  gender?: string;
+  isGenderVisible?: boolean;
+}
+
 export interface AppContextType {
-  session: {
-    userId: string;
-    username: string;
-    email: string;
-  } | null;
+  session: AppSession | null;
+  setSession: (session: any) => void;
   register: (data: any) => Promise<any>;
   login: (data: any) => Promise<any>;
   logout: () => Promise<void>;
@@ -79,19 +88,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Language state
   const [lang, setLang] = useState<LocaleKey>('en');
 
-  // Session state (no localStorage)
-  const [session, setSession] = useState<{
-    userId: string;
-    username: string;
-    email: string;
-  } | null>(null);
+  // Session state with localStorage persistence
+  const [session, setSessionState] = useState<AppSession | null>(() => {
+    try {
+      const saved = localStorage.getItem('chatlustora_user_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const setSession = (sess: any) => {
+    if (sess) {
+      const formatted: AppSession = {
+        userId: sess.userId || sess.id || `usr-${Date.now()}`,
+        username: sess.username || sess.nickname || 'User',
+        nickname: sess.nickname || sess.username || 'User',
+        email: sess.email || '',
+        role: sess.role || 'guest',
+        avatarSeed: sess.avatarSeed || 'user-seed',
+        token: sess.token || sess.sessionId || '',
+        gender: sess.gender || 'prefer-not-to-say',
+        isGenderVisible: sess.isGenderVisible ?? true
+      };
+      setSessionState(formatted);
+      try {
+        localStorage.setItem('chatlustora_user_session', JSON.stringify(formatted));
+      } catch {}
+    } else {
+      setSessionState(null);
+      try {
+        localStorage.removeItem('chatlustora_user_session');
+      } catch {}
+    }
+  };
 
   useEffect(() => {
     // Check auth on mount
     fetch('/api/auth/me')
       .then(res => res.json())
-      .then(data => {
-        if (data.id) setSession(data);
+      .then((data: any) => {
+        if (data && (data.id || data.userId)) {
+          setSession(data);
+        }
       })
       .catch(() => {});
   }, []);
@@ -103,16 +142,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const login = async (data: any) => {
     const res = await fetch('/api/auth/login', { method: 'POST', body: JSON.stringify(data), headers: {'Content-Type': 'application/json'} });
-    const result = await res.json();
-    if (result.success) {
-      const me = await fetch('/api/auth/me');
-      setSession(await me.json());
+    const result: any = await res.json();
+    if (result && result.success) {
+      const meRes = await fetch('/api/auth/me');
+      const me: any = await meRes.json();
+      if (me && (me.id || me.userId)) {
+        setSession(me);
+      }
     }
     return result;
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
     setSession(null);
   };
   
@@ -242,29 +286,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
 
-  // WebSocket integration
-  const [ws, setWs] = useState<WebSocket | null>(null);
-  
-  useEffect(() => {
-    if (!activeRoom) return;
-    
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/rooms/${activeRoom.id}/ws`);
-    
-    socket.onopen = () => setWs(socket);
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'message') {
-        // Handle incoming messages
-      }
-    };
-    socket.onclose = () => setWs(null);
-    
-    return () => socket.close();
-  }, [activeRoom, session]);
-
-
-  // Handle active room joins over socket
+  // Handle active room joins over socket (if Socket.IO socket exists)
   useEffect(() => {
     if (socket && socket.connected && activeRoom) {
       socket.emit('room:join', { roomId: activeRoom.id });
@@ -370,6 +392,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <AppContext.Provider
       value={{
         session,
+        setSession,
         register,
         login,
         logout,

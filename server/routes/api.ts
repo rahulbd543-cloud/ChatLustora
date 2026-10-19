@@ -165,8 +165,14 @@ apiRouter.get('/rooms/:roomId/messages', (req: Request, res: Response) => {
     res.status(404).json({ error: 'Room not found' });
     return;
   }
-  const messages = dbStore.getRoomMessages(roomId, 50);
-  res.json({ roomId, messages });
+  const limit = Math.max(1, Math.min(Number(req.query.limit) || 50, 100));
+  const before = req.query.before ? Number(req.query.before) : undefined;
+  let messages = dbStore.getRoomMessages(room.id, 100);
+  if (before) {
+    messages = messages.filter(m => m.timestamp < before);
+  }
+  messages = messages.slice(-limit);
+  res.json({ roomId: room.id, messages });
 });
 
 // -------------------------------------------------------------

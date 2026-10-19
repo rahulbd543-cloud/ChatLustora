@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { hashPassword, verifyPassword } from './auth';
+import { getRoomById } from '../../shared/rooms.js';
 
 type Bindings = {
   DB: D1Database;
@@ -12,39 +13,101 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.get('/healthz', (c) => c.json({ status: 'ok' }));
 
 app.get('/api/rooms', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM rooms').all();
-  return c.json({ rooms: results });
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM rooms').all();
+    return c.json({ rooms: results });
+  } catch {
+    return c.json({ rooms: [] });
+  }
 });
 
 app.get('/api/rooms/:roomId/ws', async (c) => {
   const roomId = c.req.param('roomId');
   
-  // Validate room exists
-  const room = await c.env.DB.prepare('SELECT id FROM rooms WHERE id = ?').bind(roomId).first();
+  // Fast validation against canonical rooms
+  const canonicalRoom = getRoomById(roomId);
+  if (!canonicalRoom) {
+    return c.json({ error: 'Room not found in canonical directory' }, 404);
+  }
+
+  // Validate room exists in D1
+  const room = await c.env.DB.prepare('SELECT id FROM rooms WHERE id = ?').bind(canonicalRoom.id).first();
   if (!room) return c.json({ error: 'Room not found' }, 404);
 
-  // Authenticate session
-  const sessionId = c.req.header('cookie')?.split('session_id=')[1]?.split(';')[0];
+  // Authenticate session from cookies
+  const cookieHeader = c.req.header('cookie') || '';
+  const sessionId = cookieHeader.split('session_id=')[1]?.split(';')[0]
+    || cookieHeader.split('chatlustora_session=')[1]?.split(';')[0];
   if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
+
   const session = await c.env.DB.prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?')
     .bind(sessionId, Date.now()).first();
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
-  // Upgrade and pass authenticated user ID to DO
-  const id = c.env.ROOMS.idFromName(roomId);
+  // Retrieve user metadata (username & role)
+  const user = await c.env.DB.prepare('SELECT username FROM users WHERE id = ?')
+    .bind(session.user_id)
+    .first();
+  const nickname = (user?.username as string) || `User_${String(session.user_id).slice(-4)}`;
+
+  // Upgrade and pass authenticated user metadata to RoomDO
+  const id = c.env.ROOMS.idFromName(canonicalRoom.id);
   const obj = c.env.ROOMS.get(id);
   const newRequest = new Request(c.req.raw, {
-    headers: { ...c.req.raw.headers, 'x-user-id': session.user_id as string }
+    headers: {
+      ...c.req.raw.headers,
+      'x-user-id': session.user_id as string,
+      'x-user-nickname': nickname,
+      'x-user-role': 'member',
+      'x-user-avatar': session.user_id as string,
+      'x-room-id': canonicalRoom.id
+    }
   });
   return obj.fetch(newRequest);
 });
 
 app.get('/api/rooms/:roomId/messages', async (c) => {
   const roomId = c.req.param('roomId');
-  const { results } = await c.env.DB.prepare('SELECT * FROM messages WHERE room_id = ? ORDER BY timestamp DESC LIMIT 50')
-    .bind(roomId)
-    .all();
-  return c.json({ messages: results.reverse() });
+  const canonicalRoom = getRoomById(roomId);
+  if (!canonicalRoom) {
+    return c.json({ error: 'Room not found' }, 404);
+  }
+
+  const limitParam = Number(c.req.query('limit')) || 50;
+  const limit = Math.max(1, Math.min(limitParam, 100));
+  const beforeParam = c.req.query('before');
+
+  try {
+    let query = 'SELECT * FROM messages WHERE room_id = ?';
+    const params: any[] = [canonicalRoom.id];
+
+    if (beforeParam) {
+      query += ' AND timestamp < ?';
+      params.push(Number(beforeParam));
+    }
+
+    query += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(limit);
+
+    const { results } = await c.env.DB.prepare(query).bind(...params).all();
+    const formatted = results.map((r: any) => ({
+      id: r.id,
+      roomId: r.room_id,
+      senderId: r.sender_id,
+      senderNickname: r.sender_nickname || 'User',
+      senderRole: r.sender_role || 'member',
+      senderAvatarSeed: r.sender_id || 'user-seed',
+      senderGender: 'prefer-not-to-say',
+      senderIsGenderVisible: true,
+      text: r.text,
+      timestamp: r.timestamp
+    }));
+
+    return c.json({ roomId: canonicalRoom.id, messages: formatted.reverse() });
+  } catch (err) {
+    console.error('Failed to load room messages:', err);
+    return c.json({ roomId: canonicalRoom.id, messages: [] });
+  }
 });
 
 app.get('/api/roulette/ws', async (c) => {
@@ -111,4 +174,6 @@ app.get('/api/auth/me', async (c) => {
   return c.json(user);
 });
 
+export { RoomDO } from './RoomDO';
+export { CoordinatorDO } from './CoordinatorDO';
 export default app;
