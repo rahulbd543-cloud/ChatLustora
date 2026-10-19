@@ -25,7 +25,7 @@ name = "chatlustora-staging"
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "chatlustora-staging-db"
-database_id = "PLACEHOLDER_STAGING_D1_ID"
+database_id = "b5de7d6e-d425-443b-95f7-414c224445fd"
 
 [[env.staging.migrations]]
 tag = "v1"
