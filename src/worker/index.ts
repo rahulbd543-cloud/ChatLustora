@@ -129,28 +129,56 @@ app.get('/api/roulette/ws', async (c) => {
   return obj.fetch(newRequest);
 });
 
-function calculateAge(dobString: string): number {
-  const dob = new Date(dobString);
-  if (isNaN(dob.getTime())) return -1;
+export function isValidCalendarDate(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === m - 1 &&
+    date.getUTCDate() === d
+  );
+}
+
+export function calculateAgeUTC(dobString: string): number {
+  if (!isValidCalendarDate(dobString)) return -1;
+  const [y, m, d] = dobString.split('-').map(Number);
   const today = new Date();
-  if (dob > today) return -1;
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+  const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const dob = new Date(Date.UTC(y, m - 1, d));
+
+  if (dob > todayUTC) return -1;
+
+  let age = todayUTC.getUTCFullYear() - y;
+  const monthDiff = todayUTC.getUTCMonth() - (m - 1);
+  const dayDiff = todayUTC.getUTCDate() - d;
+
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
     age--;
   }
   return age;
 }
 
 app.post('/api/auth/register', async (c) => {
-  const { username, email, password, dateOfBirth } = await c.req.json();
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Malformed JSON payload' }, 400);
+  }
+
+  const { username, email, password, dateOfBirth } = body || {};
   if (!username || !email || !password || !dateOfBirth) {
     return c.json({ error: 'Missing required fields including date of birth' }, 400);
   }
 
-  const age = calculateAge(dateOfBirth);
+  if (!isValidCalendarDate(dateOfBirth)) {
+    return c.json({ error: 'Invalid date of birth format or impossible calendar date' }, 400);
+  }
+
+  const age = calculateAgeUTC(dateOfBirth);
   if (age < 0) {
-    return c.json({ error: 'Invalid or future date of birth' }, 400);
+    return c.json({ error: 'Future date of birth is not allowed' }, 400);
   }
   if (age < 18) {
     return c.json({ error: 'Access denied. You must be at least 18 years old to register.' }, 403);

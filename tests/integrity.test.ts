@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { INITIAL_CHATROOMS, TOTAL_INITIAL_ROOMS, getRoomBySlug, getRoomById } from '../shared/rooms.js';
 import { validateSessionCreation, normalizeNickname, createGuestSession } from '../server/session.js';
 import { dbStore } from '../server/db.js';
+import { isValidCalendarDate, calculateAgeUTC } from '../src/worker/index.js';
 
 describe('ChatLustora Authoritative Room Directory Tests', () => {
   test('Exact count of initial rooms must be 23', () => {
@@ -717,6 +718,42 @@ describe('WebRTC Media Lifecycle & Early ICE Candidate Queue Tests', () => {
 
     assert.equal(audioStopped, true, 'Audio track must be stopped');
     assert.equal(videoStopped, true, 'Video track must be stopped');
+  });
+});
+
+describe('Worker Registration & Strict Calendar DOB Validation Tests', () => {
+  test('Validates calendar dates strictly (rejects impossible dates like 2025-02-30 and wrong formats)', () => {
+    assert.equal(isValidCalendarDate('2025-02-30'), false, 'February 30 is impossible');
+    assert.equal(isValidCalendarDate('2024-02-29'), true, '2024 is a leap year');
+    assert.equal(isValidCalendarDate('2023-02-29'), false, '2023 is not a leap year');
+    assert.equal(isValidCalendarDate('15-05-1990'), false, 'Wrong format DD-MM-YYYY');
+    assert.equal(isValidCalendarDate('1990/05/15'), false, 'Wrong separator /');
+  });
+
+  test('Rejects future dates of birth', () => {
+    const futureYear = new Date().getUTCFullYear() + 2;
+    assert.equal(calculateAgeUTC(`${futureYear}-01-01`), -1);
+  });
+
+  test('Rejects person one day short of 18', () => {
+    const now = new Date();
+    // Person born 18 years ago tomorrow
+    const shortDate = new Date(Date.UTC(now.getUTCFullYear() - 18, now.getUTCMonth(), now.getUTCDate() + 1));
+    const dobStr = shortDate.toISOString().split('T')[0];
+    const age = calculateAgeUTC(dobStr);
+    assert.ok(age < 18, 'Person born tomorrow 18 years ago is under 18');
+  });
+
+  test('Accepts person turning 18 today', () => {
+    const now = new Date();
+    const dobStr = `${now.getUTCFullYear() - 18}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const age = calculateAgeUTC(dobStr);
+    assert.equal(age, 18, 'Person born exactly 18 years ago today is 18');
+  });
+
+  test('Accepts eligible adult', () => {
+    const age = calculateAgeUTC('1990-05-15');
+    assert.ok(age >= 18);
   });
 });
 
