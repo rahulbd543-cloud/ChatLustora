@@ -8,8 +8,10 @@ interface D1PreparedStatement {
 declare global {
   interface D1Database {
     prepare(query: string): D1PreparedStatement;
+    batch<T = any>(
+      statements: D1PreparedStatement[]
+    ): Promise<Array<{ success: boolean; meta: any }>>;
   }
-
   interface DurableObjectState {
     id: { toString(): string };
     storage: {

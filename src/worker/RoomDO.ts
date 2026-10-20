@@ -30,16 +30,41 @@ interface RoomSession {
 
 export class RoomDO {
   state: DurableObjectState;
-  env: { DB: D1Database };
+  env: {
+    DB: D1Database;
+    INTERNAL_MODERATION_SECRET: string;
+  };
   sessions: Map<WebSocket, RoomSession> = new Map();
 
-  constructor(state: DurableObjectState, env: { DB: D1Database }) {
+  constructor(
+    state: DurableObjectState,
+    env: {
+      DB: D1Database;
+      INTERNAL_MODERATION_SECRET: string;
+    }
+  ) {
     this.state = state;
     this.env = env;
   }
 
   async fetch(request: Request): Promise<Response> {
-    // Authentication headers forwarded by Hono Worker
+    const expectedSecret = this.env.INTERNAL_MODERATION_SECRET;
+    const suppliedSecret = request.headers.get('x-internal-secret');
+
+    if (
+      !expectedSecret ||
+      !suppliedSecret ||
+      suppliedSecret !== expectedSecret
+    ) {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden' }),
+        {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+// Authentication headers forwarded by Hono Worker
     const userId = request.headers.get('x-user-id');
     if (!userId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -109,22 +134,97 @@ export class RoomDO {
             server.send(JSON.stringify({ type: 'error', error: 'Invalid message payload' }));
             return;
           }
-
+ const now = Date.now();
           const rawText = data.text.trim();
           if (!rawText) {
             server.send(JSON.stringify({ type: 'error', error: 'Message cannot be empty' }));
             return;
           }
+          // Enforce active room bans for already-connected users.
+          // Administrators retain the same bypass as the connection guard.
+          if (session.role !== 'admin') {
+            try {
+              const activeBan = await this.env.DB
+                .prepare(`
+                  SELECT id
+                  FROM room_bans
+                  WHERE room_id = ?
+                    AND user_id = ?
+                    AND (expires_at IS NULL OR expires_at > ?)
+                  LIMIT 1
+                `)
+                .bind(roomId, session.userId, Date.now())
+                .first<{ id: string }>();
 
-          const now = Date.now();
+              if (activeBan) {
+                try {
+                  server.send(JSON.stringify({
+                    type: 'error',
+                    error: 'You are banned from this room.'
+                  }));
+                } finally {
+                  server.close(1008, 'Banned from this room');
+                }
+                return;
+              }
+            } catch (error) {
+              console.error('[RoomDO] Ban status check failed:', error);
 
+              try {
+                server.send(JSON.stringify({
+                  type: 'error',
+                  error: 'Unable to verify room access. Please reconnect later.'
+                }));
+              } finally {
+                server.close(1011, 'Unable to verify room access');
+              }
+              return;
+            }
+          }
+
+
+          // Enforce active room mute before accepting a message.
+try {
+  const activeMute = await this.env.DB
+    .prepare(`
+      SELECT id, expires_at
+      FROM room_mutes
+      WHERE room_id = ?
+        AND user_id = ?
+        AND expires_at > ?
+      LIMIT 1
+    `)
+    .bind(roomId, session.userId, Date.now())
+    .first<{ id: string; expires_at: number }>();
+
+  if (activeMute) {
+    server.send(JSON.stringify({
+      type: 'error',
+      error: 'You are muted in this room.',
+      muteUntil: activeMute.expires_at
+    }));
+    return;
+  }
+} catch (error) {
+  console.error('[RoomDO] Mute status check failed:', error);
+
+  // Fail closed: do not accept messages when mute status is unknown.
+  server.send(JSON.stringify({
+    type: 'error',
+    error: 'Unable to verify mute status. Please try again.'
+  }));
+  return;
+}
           // Rate limiting: 1 message per 500ms
           if (now - session.lastMessageTime < 500) {
-            server.send(JSON.stringify({ type: 'error', error: 'Rate limit exceeded' }));
+            server.send(JSON.stringify({
+              type: 'error',
+              error: 'Rate limit exceeded'
+            }));
             return;
           }
-          session.lastMessageTime = now;
 
+          session.lastMessageTime = now;
           // Message length limit (500 chars) & HTML entity escaping
           const cleanText = escapeHtml(rawText.substring(0, 500));
           const msgId = crypto.randomUUID();

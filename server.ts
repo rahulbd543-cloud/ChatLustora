@@ -50,6 +50,73 @@ async function startServer() {
   setupSocketServer(io);
   setupRoomWebSocket(server);
 
+  // CHATLUSTORA_LOCAL_MEMBER_AUTH_PROXY
+  // Local development only: proxy registered-member auth to the staging Worker.
+  // Guest sessions continue using the existing Express API and cookie.
+  if (!isProd) {
+    const authOrigin = (
+      process.env.CHATLUSTORA_AUTH_ORIGIN ||
+      'https://chatlustora-staging.rahulbd543.workers.dev'
+    ).replace(/\/+$/, '');
+
+    app.use('/api/auth', async (req, res, next) => {
+      const route = req.path;
+      const hasMemberCookie = Boolean(req.cookies?.session_id);
+
+      const shouldProxy =
+        (req.method === 'POST' && (route === '/login' || route === '/register')) ||
+        (route === '/me' && hasMemberCookie) ||
+        (req.method === 'POST' && route === '/logout' && hasMemberCookie);
+
+      if (!shouldProxy) {
+        next();
+        return;
+      }
+
+      try {
+        const headers: Record<string, string> = {
+          accept: 'application/json'
+        };
+
+        let body: string | undefined;
+
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          headers['content-type'] = 'application/json';
+          body = JSON.stringify(req.body ?? {});
+        }
+
+        // Forward only the registered-member session cookie when needed.
+        if (hasMemberCookie && (route === '/me' || route === '/logout')) {
+          headers.cookie = `session_id=${req.cookies.session_id}`;
+        }
+
+        const upstream = await fetch(`${authOrigin}/api/auth${route}`, {
+          method: req.method,
+          headers,
+          body,
+          redirect: 'manual'
+        });
+
+        const setCookie = upstream.headers.get('set-cookie');
+        if (setCookie) {
+          res.setHeader('Set-Cookie', setCookie);
+        }
+
+        const responseBody = await upstream.text();
+        res.status(upstream.status);
+        res.setHeader(
+          'Content-Type',
+          upstream.headers.get('content-type') || 'application/json; charset=utf-8'
+        );
+        res.send(responseBody);
+      } catch {
+        // Never log credentials, request bodies, or session cookies.
+        res.status(502).json({
+          error: 'Member authentication service is temporarily unavailable.'
+        });
+      }
+    });
+  }
   // SEO & API Routes
   app.use('/', seoRouter);
   app.use('/api', apiRouter);

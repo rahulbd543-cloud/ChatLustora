@@ -141,15 +141,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const login = async (data: any) => {
-    const res = await fetch('/api/auth/login', { method: 'POST', body: JSON.stringify(data), headers: {'Content-Type': 'application/json'} });
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
     const result: any = await res.json();
-    if (result && result.success) {
-      const meRes = await fetch('/api/auth/me');
-      const me: any = await meRes.json();
-      if (me && (me.id || me.userId)) {
-        setSession(me);
-      }
+
+    if (!res.ok || !result?.success) {
+      return result ?? { error: 'Login failed' };
     }
+
+    const meRes = await fetch('/api/auth/me', {
+      credentials: 'same-origin'
+    });
+    const me: any = await meRes.json();
+
+    if (!meRes.ok || !(me?.id || me?.userId)) {
+      return {
+        error: me?.error || 'Session could not be verified. Please try again.'
+      };
+    }
+
+    setSession(me);
     return result;
   };
 

@@ -12,7 +12,8 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Flag
 } from 'lucide-react';
 
 // Quick adult/flirty emoji set for instant insertion
@@ -43,7 +44,21 @@ export const ChatWorkspace: React.FC = () => {
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [selectedUserAction, setSelectedUserAction] = useState<string | null>(null);
+  const [reportTarget, setReportTarget] = useState<{
+    userId: string;
+    nickname: string;
+  } | null>(null);
 
+  const [reportReason, setReportReason] = useState<
+    'harassment' | 'underage_suspicion' | 'spam' | 'non_consensual' | 'other'
+  >('harassment');
+
+  const [reportNotes, setReportNotes] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportFeedback, setReportFeedback] = useState<{
+    message: string;
+    success: boolean;
+  } | null>(null);
   // Connection & Room Presence States
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [sendError, setSendError] = useState<string | null>(null);
@@ -186,6 +201,7 @@ export const ChatWorkspace: React.FC = () => {
           const tId = setTimeout(() => {
             setSendError((curr) => (curr === data.error ? null : curr));
           }, 4000);
+
           return () => clearTimeout(tId);
         }
       } catch (e) {
@@ -212,6 +228,67 @@ export const ChatWorkspace: React.FC = () => {
       setConnectionStatus('error');
     };
   }, [activeRoom?.id, session?.userId, session?.token]);
+
+  const submitReport = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!session?.userId || !reportTarget || reportSubmitting) {
+      return;
+    }
+
+    if (!activeRoom?.id) {
+      setReportFeedback({
+        message: 'No active room selected.',
+        success: false
+      });
+      return;
+    }
+
+    setReportSubmitting(true);
+    setReportFeedback(null);
+
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          targetId: reportTarget.userId,
+          roomId: activeRoom.id,
+          reason: reportReason,
+          notes: reportNotes.trim()
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === 'string'
+            ? data.error
+            : 'Unable to submit report.'
+        );
+      }
+
+      setReportFeedback({
+        message: 'Report submitted successfully. Thank you.',
+        success: true
+      });
+      setReportNotes('');
+    } catch (error) {
+      setReportFeedback({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to submit report. Please try again.',
+        success: false
+      });
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
 
   // Handle activeRoom change: cleanly close previous room, fetch history, open new room WS
   useEffect(() => {
@@ -365,7 +442,7 @@ export const ChatWorkspace: React.FC = () => {
                 {activeRoom.description}
               </p>
             </div>
-          </div>
+                                  </div>
 
           <div className="flex items-center gap-2 shrink-0">
             {/* Real WebSocket Connection Status Indicator */}
@@ -428,7 +505,7 @@ export const ChatWorkspace: React.FC = () => {
         {sendError && (
           <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-xs flex items-center justify-between animate-in fade-in">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
               <span>{sendError}</span>
             </div>
             <button
@@ -554,6 +631,22 @@ export const ChatWorkspace: React.FC = () => {
                         >
                           {t('blockUser')}
                         </button>
+<button
+  onClick={() => {
+    setReportTarget({
+      userId: msg.senderId,
+      nickname: nicknameDisplay
+    });
+    setReportReason('harassment');
+    setReportNotes('');
+    setReportFeedback(null);
+    setSelectedUserAction(null);
+  }}
+  className="px-2 py-1 rounded text-amber-600 hover:bg-amber-500/10 transition-colors flex items-center gap-1"
+>
+  <Flag className="w-3 h-3" />
+  Report
+</button>
                       </div>
                     )}
                   </div>
@@ -752,6 +845,89 @@ export const ChatWorkspace: React.FC = () => {
           </p>
         </div>
       </aside>
+      {reportTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form
+            onSubmit={submitReport}
+            className="w-full max-w-md rounded-2xl border border-line bg-raised p-5 shadow-2xl"
+          >
+            <h2 className="text-lg font-bold text-text-main">
+              Report {reportTarget.nickname}
+            </h2>
+
+            <p className="mt-1 text-sm text-text-muted">
+              Choose the reason for your report.
+            </p>
+
+            <label className="mt-4 block text-sm font-medium text-text-main">
+              Reason
+              <select
+                value={reportReason}
+                onChange={(event) =>
+                  setReportReason(event.target.value as typeof reportReason)
+                }
+                className="mt-2 w-full rounded-lg border border-line bg-black/5 p-3 text-text-main"
+                disabled={reportSubmitting}
+              >
+                <option value="harassment">Harassment or abuse</option>
+                <option value="underage_suspicion">Suspected underage user</option>
+                <option value="spam">Spam or scams</option>
+                <option value="non_consensual">
+                  Non-consensual content or behaviour
+                </option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+
+            <label className="mt-4 block text-sm font-medium text-text-main">
+              Additional details (optional)
+              <textarea
+                value={reportNotes}
+                onChange={(event) => setReportNotes(event.target.value)}
+                maxLength={1000}
+                rows={4}
+                placeholder="Describe what happened..."
+                className="mt-2 w-full resize-y rounded-lg border border-line bg-black/5 p-3 text-text-main"
+                disabled={reportSubmitting}
+              />
+            </label>
+
+            {reportFeedback && (
+              <p
+                role="status"
+                className={`mt-3 text-sm ${
+                  reportFeedback.success ? 'text-green-600' : 'text-red-500'
+                }`}
+              >
+                {reportFeedback.message}
+              </p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (reportSubmitting) return;
+                  setReportTarget(null);
+                  setReportFeedback(null);
+                }}
+                disabled={reportSubmitting}
+                className="rounded-lg border border-line px-4 py-2 text-sm text-text-main disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={reportSubmitting}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {reportSubmitting ? 'Submitting...' : 'Submit report'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

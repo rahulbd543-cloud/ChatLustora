@@ -6,3 +6,19 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local database backups
+backups/
+
+# Local backup files - never commit
+*.bak
+*.backup
+*.backup-*
+*.before-*
+*.security-backup
+*.pre-*
+*.raw-bom-backup-*
+*.moderation-fetch-*
+*.report-fix-backup
+
+*security-fix-backup*

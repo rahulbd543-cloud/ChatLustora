@@ -5,7 +5,7 @@ import { GenderType } from './GenderBadge.js';
 import { ShieldAlert, Dice5, Lock, ArrowRight, AlertTriangle, Calendar, UserCheck, X, User, LogIn, UserPlus } from 'lucide-react';
 
 export const AdultGateModal: React.FC = () => {
-  const { authModalMode, closeAuthModal, setSession, t, lang, setLang, openInfoModal } = useApp();
+  const { authModalMode, closeAuthModal, setSession, login, t, lang, setLang, openInfoModal } = useApp();
 
   const [mode, setMode] = useState<'guest' | 'login' | 'signup'>(authModalMode || 'guest');
   const [nickname, setNickname] = useState('');
@@ -46,11 +46,28 @@ export const AdultGateModal: React.FC = () => {
     setError(null);
 
     if (mode === 'login') {
-      setError(
-        lang === 'bn'
-          ? 'সদস্য লগইন বর্তমানে উপলব্ধ নয়। অনুগ্রহ করে নিশ্চিত বয়স যাচাই করে গেস্ট এন্ট্রি ব্যবহার করুন।'
-          : 'Member account login requires a registered database account. Please use Guest Entry with 18+ age verification for instant chat.'
-      );
+      const loginEmail = nickname.trim();
+
+      if (!loginEmail || !password) {
+        setError('Please enter your email and password.');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const result = await login({ email: loginEmail, password });
+
+        if (result?.error || !result?.success) {
+          setError(result?.error || 'Login failed. Please check your credentials.');
+          return;
+        }
+
+        closeAuthModal();
+      } catch {
+        setError('Unable to log in right now. Please try again.');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 

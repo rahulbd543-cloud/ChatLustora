@@ -1,12 +1,27 @@
 export class CoordinatorDO {
   state: DurableObjectState;
+  env: { INTERNAL_MODERATION_SECRET: string };
   sessions: Map<string, WebSocket> = new Map(); // userId -> WebSocket
 
-  constructor(state: DurableObjectState) {
+  constructor(
+    state: DurableObjectState,
+    env: { INTERNAL_MODERATION_SECRET: string }
+  ) {
     this.state = state;
+    this.env = env;
   }
 
   async fetch(request: Request) {
+    const expectedSecret = this.env.INTERNAL_MODERATION_SECRET;
+    const suppliedSecret = request.headers.get('x-internal-secret');
+
+    if (
+      !expectedSecret ||
+      !suppliedSecret ||
+      suppliedSecret !== expectedSecret
+    ) {
+      return new Response('Forbidden', { status: 403 });
+    }
     const userId = request.headers.get('x-user-id');
     if (!userId) return new Response('Unauthorized', { status: 401 });
 

@@ -119,6 +119,90 @@ export function setupRoomWebSocket(server: http.Server) {
       token = cookies[SESSION_COOKIE_NAME] || cookies['session_id'] || '';
     }
 
+    // Local development: forward registered-member sockets to staging.
+    // Guest sockets continue through the existing local session store.
+    const memberSessionId = cookieHeader
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('session_id='))
+      ?.slice('session_id='.length);
+
+    if (memberSessionId) {
+      const authOrigin = (
+        process.env.CHATLUSTORA_AUTH_ORIGIN ||
+        'https://chatlustora-staging.rahulbd543.workers.dev'
+      ).replace(/\/+$/, '');
+
+      const upstreamUrl = new URL(
+        `/api/rooms/${encodeURIComponent(room.id)}/ws`,
+        authOrigin
+      );
+      upstreamUrl.protocol = upstreamUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+
+      const upstream = new NodeWebSocket(upstreamUrl.toString(), {
+        headers: {
+          Cookie: `session_id=${memberSessionId}`
+        },
+        handshakeTimeout: 10000
+      });
+
+      let upgraded = false;
+
+      upstream.once('open', () => {
+        if (socket.destroyed) {
+          upstream.close();
+          return;
+        }
+
+        wss.handleUpgrade(request, socket, head, (clientWs) => {
+          upgraded = true;
+
+          clientWs.on('message', (data, isBinary) => {
+            if (upstream.readyState === NodeWebSocket.OPEN) {
+              upstream.send(data, { binary: isBinary });
+            }
+          });
+
+          upstream.on('message', (data, isBinary) => {
+            if (clientWs.readyState === NodeWebSocket.OPEN) {
+              clientWs.send(data, { binary: isBinary });
+            }
+          });
+
+          clientWs.on('close', () => upstream.close());
+          upstream.on('close', () => {
+            if (clientWs.readyState === NodeWebSocket.OPEN) {
+              clientWs.close();
+            }
+          });
+
+          clientWs.on('error', () => upstream.terminate());
+          upstream.on('error', () => clientWs.close());
+        });
+      });
+
+      upstream.once('unexpected-response', (_request, response) => {
+        if (!upgraded && !socket.destroyed) {
+          socket.write(
+            'HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n'
+          );
+          socket.destroy();
+        }
+        upstream.terminate();
+      });
+
+      upstream.once('error', () => {
+        if (!upgraded && !socket.destroyed) {
+          socket.write(
+            'HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n'
+          );
+          socket.destroy();
+        }
+      });
+
+      return;
+    }
+
     const session = resolveSessionFromToken(token);
     if (!session) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\n\r\n{"error":"Unauthorized: valid adult session required"}');

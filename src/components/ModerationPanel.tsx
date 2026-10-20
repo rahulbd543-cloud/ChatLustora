@@ -17,56 +17,106 @@ export const ModerationPanel: React.FC = () => {
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<ModerationAuditLog[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const fetchModerationData = () => {
-    if (!session?.token) return;
+  const fetchModerationData = async () => {
+    if (!session) return;
+
     setLoading(true);
+    setLoadError(null);
 
-    fetch('/api/moderation/reports', {
-      headers: { Authorization: `Bearer ${session.token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.reports) setReports(data.reports);
-      })
-      .catch(() => {});
+    try {
+      const [reportsResponse, logsResponse] = await Promise.all([
+        fetch('/api/moderation/reports', {
+          credentials: 'same-origin'
+        }),
+        fetch('/api/moderation/audit-logs', {
+          credentials: 'same-origin'
+        })
+      ]);
 
-    fetch('/api/moderation/audit-logs', {
-      headers: { Authorization: `Bearer ${session.token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.logs) setAuditLogs(data.logs);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      if (!reportsResponse.ok || !logsResponse.ok) {
+        if (reportsResponse.status === 401 || logsResponse.status === 401) {
+          throw new Error('Your session has expired. Please sign in again.');
+        }
+
+        if (reportsResponse.status === 403 || logsResponse.status === 403) {
+          throw new Error('You are not authorized to view moderation data.');
+        }
+
+        throw new Error('Unable to load moderation data. Please try again.');
+      }
+
+      const reportsData = await reportsResponse.json();
+      const logsData = await logsResponse.json();
+
+      if (!Array.isArray(reportsData.reports) || !Array.isArray(logsData.logs)) {
+        throw new Error('The moderation API returned an invalid response.');
+      }
+
+      setReports(reportsData.reports);
+      setAuditLogs(logsData.logs);
+    } catch (error) {
+      setReports([]);
+      setAuditLogs([]);
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load moderation data. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
-
   useEffect(() => {
     fetchModerationData();
   }, [session?.token]);
 
-  const handleAction = async (action: 'warn' | 'mute' | 'ban' | 'dismiss', report: ReportItem) => {
+  
+  const handleAction = async (
+    action: 'warn' | 'mute' | 'ban' | 'dismiss',
+    report: ReportItem
+  ) => {
+    setLoadError(null);
+
+    const confirmation = window.confirm(
+      `${action.toUpperCase()} ${report.targetNickname} for this report?`
+    );
+
+    if (!confirmation) return;
+
     try {
-      await fetch('/api/moderation/action', {
+      const response = await fetch('/api/moderation/action', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          action,
-          targetId: report.targetId,
-          targetNickname: report.targetNickname,
           reportId: report.id,
-          reason: `Violation reported: ${report.reason}`
+          action
         })
       });
 
-      fetchModerationData();
-    } catch {}
-  };
+      const data = await response.json();
 
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === 'string'
+            ? data.error
+            : 'Moderation action failed.'
+        );
+      }
+
+      await fetchModerationData();
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Moderation action failed.'
+      );
+    }
+  };
   if (session?.role !== 'admin' && session?.role !== 'moderator') {
     return (
       <div className="flex-1 flex items-center justify-center p-8 text-center text-text-muted">
@@ -87,6 +137,12 @@ export const ModerationPanel: React.FC = () => {
             Real-time report triage and moderation enforcement. Review abusive conduct, non-consensual content, and underage suspicion.
           </p>
         </div>
+
+        {loadError && (
+          <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-500">
+            {loadError}
+          </div>
+        )}
 
         {/* Reports Queue */}
         <div className="flex flex-col gap-3">
@@ -139,6 +195,12 @@ export const ModerationPanel: React.FC = () => {
                   >
                     {t('banUser')}
                   </button>
+                 <button
+  onClick={() => handleAction('dismiss', rep)}
+  className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold"
+>
+  Dismiss
+</button>
                 </div>
               </div>
             ))
