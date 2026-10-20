@@ -32,13 +32,22 @@ export function normalizeNickname(input: string): string {
 }
 
 export function calculateAge(dobString: string): number {
-  const dob = new Date(dobString);
-  if (isNaN(dob.getTime())) return -1;
+  // Strict YYYY-MM-DD validation
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dobString)) return -1;
+  
+  const [y, m, d] = dobString.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+    return -1; // Invalid calendar date
+  }
+
   const today = new Date();
-  if (dob > today) return -1;
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+  if (date > today) return -1; // Future date
+  
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
     age--;
   }
   return age;

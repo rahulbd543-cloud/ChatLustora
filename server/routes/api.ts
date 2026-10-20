@@ -37,7 +37,7 @@ apiRouter.get('/auth/suggest-nickname', (_req: Request, res: Response) => {
 });
 
 apiRouter.post('/auth/session', (req: Request, res: Response) => {
-  const { nickname, isAdultConfirmed, termsAccepted, gender, dateOfBirth, isGenderVisible, roleKey } = req.body;
+  const { nickname, isAdultConfirmed, termsAccepted, gender, dateOfBirth, isGenderVisible } = req.body;
 
   const validation = validateSessionCreation(
     nickname,
