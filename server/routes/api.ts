@@ -32,11 +32,35 @@ function authMiddleware(req: Request, res: Response, next: () => void) {
 // -------------------------------------------------------------
 // AUTH & GUEST ENTRY
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+// AUTH & GUEST ENTRY
+// -------------------------------------------------------------
 apiRouter.get('/auth/suggest-nickname', (_req: Request, res: Response) => {
   res.json({ nickname: generateSuggestedNickname() });
 });
 
+apiRouter.post('/auth/register', async (req: Request, res: Response) => {
+  const { username, email, password, dateOfBirth } = req.body;
+  if (!username || !email || !password || !dateOfBirth) {
+    res.status(400).json({ error: 'Missing required fields' });
+    return;
+  }
+  // In dev, we just simulate success as persistence is not critical here
+  res.status(200).json({ success: true });
+});
+
+apiRouter.post('/auth/login', async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    res.status(400).json({ error: 'Missing credentials' });
+    return;
+  }
+  // In dev, we just simulate success
+  res.status(200).json({ success: true });
+});
+
 apiRouter.post('/auth/session', (req: Request, res: Response) => {
+  console.log('Session route hit');
   const { nickname, isAdultConfirmed, termsAccepted, gender, dateOfBirth, isGenderVisible } = req.body;
 
   const validation = validateSessionCreation(
@@ -55,7 +79,7 @@ apiRouter.post('/auth/session', (req: Request, res: Response) => {
   // Public session creation always assigns guest role securely
   const role: UserRole = 'guest';
 
-  const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
+  const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
   const genderVisible = isGenderVisible !== undefined ? Boolean(isGenderVisible) : true;
   const session = createGuestSession(
     validation.nickname!,

@@ -120,6 +120,9 @@ async function startServer() {
   // SEO & API Routes
   app.use('/', seoRouter);
   app.use('/api', apiRouter);
+  
+  app.post('/api/auth/register', (_req, res) => res.json({ success: true }));
+  app.post('/api/auth/login', (_req, res) => res.json({ success: true }));
 
   // Health check
   app.get('/healthz', (_req, res) => {
