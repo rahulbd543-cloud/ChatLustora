@@ -7,7 +7,30 @@ type Bindings = {
   ROOMS: DurableObjectNamespace;
   COORDINATOR: DurableObjectNamespace;
   INTERNAL_MODERATION_SECRET: string;
+  TURN_URL?: string;
+  TURN_USERNAME?: string;
+  TURN_CREDENTIAL?: string;
 };
+
+export function extractSessionId(c: { req: { header: (name: string) => string | undefined } }): string | undefined {
+  const authHeader = c.req.header('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token) return token;
+  }
+
+  const cookieHeader = c.req.header('cookie') || '';
+  const parts = cookieHeader.split(';').map((p) => p.trim());
+  for (const part of parts) {
+    if (part.startsWith('session_id=')) {
+      return part.slice('session_id='.length);
+    }
+    if (part.startsWith('chatlustora_session=')) {
+      return part.slice('chatlustora_session='.length);
+    }
+  }
+  return undefined;
+}
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -35,63 +58,63 @@ app.get('/api/rooms/:roomId/ws', async (c) => {
   const room = await c.env.DB.prepare('SELECT id FROM rooms WHERE id = ?').bind(canonicalRoom.id).first();
   if (!room) return c.json({ error: 'Room not found' }, 404);
 
-  // Authenticate session from cookies
-  const cookieHeader = c.req.header('cookie') || '';
-  const sessionId = cookieHeader.split('session_id=')[1]?.split(';')[0]
-    || cookieHeader.split('chatlustora_session=')[1]?.split(';')[0];
+  // Authenticate session from cookies or headers
+  const sessionId = extractSessionId(c);
   if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
 
   const session = await c.env.DB
-  .prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?')
-  .bind(sessionId, Date.now())
-  .first<{ user_id: string }>();
+    .prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?')
+    .bind(sessionId, Date.now())
+    .first<{ user_id: string }>();
 
-if (!session) {
-  return c.json({ error: 'Unauthorized' }, 401);
-}
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
-const user = await c.env.DB
-  .prepare('SELECT id, username, role FROM users WHERE id = ?')
-  .bind(session.user_id)
-  .first<{ id: string; username: string; role: string }>();
+  const user = await c.env.DB
+    .prepare('SELECT id, username, email, role FROM users WHERE id = ?')
+    .bind(session.user_id)
+    .first<{ id: string; username: string; email?: string; role?: string }>();
 
-if (!user) {
-  return c.json({ error: 'Unauthorized' }, 401);
-}
+  if (!user) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
-const nickname = user.username || `User_${user.id.slice(-4)}`;
+  const isGuest = user.email?.endsWith('@chatlustora.internal');
+  const role = isGuest ? 'guest' : (user.role || 'member');
+  const nickname = user.username || `User_${user.id.slice(-4)}`;
 
-// Enforce active room bans before allowing a WebSocket connection.
-if (user.role !== 'admin') {
-  try {
-    const activeBan = await c.env.DB
-      .prepare(`
-        SELECT id
-        FROM room_bans
-        WHERE room_id = ?
-          AND user_id = ?
-          AND (expires_at IS NULL OR expires_at > ?)
-        LIMIT 1
-      `)
-      .bind(canonicalRoom.id, user.id, Date.now())
-      .first<{ id: string }>();
+  // Enforce active room bans before allowing a WebSocket connection.
+  if (role !== 'admin') {
+    try {
+      const activeBan = await c.env.DB
+        .prepare(`
+          SELECT id
+          FROM room_bans
+          WHERE room_id = ?
+            AND user_id = ?
+            AND (expires_at IS NULL OR expires_at > ?)
+          LIMIT 1
+        `)
+        .bind(canonicalRoom.id, user.id, Date.now())
+        .first<{ id: string }>();
 
-    if (activeBan) {
+      if (activeBan) {
+        return c.json(
+          { error: 'You are banned from this room.' },
+          403
+        );
+      }
+    } catch (error) {
+      console.error('[Room Ban Check] Database error:', error);
+
+      // Fail closed if the ban status cannot be verified.
       return c.json(
-        { error: 'You are banned from this room.' },
-        403
+        { error: 'Unable to verify room access. Please try again later.' },
+        503
       );
     }
-  } catch (error) {
-    console.error('[Room Ban Check] Database error:', error);
-
-    // Fail closed if the ban status cannot be verified.
-    return c.json(
-      { error: 'Unable to verify room access. Please try again later.' },
-      503
-    );
   }
-}
 
   // Upgrade and pass authenticated user metadata to RoomDO using proper Headers cloning
   const id = c.env.ROOMS.idFromName(canonicalRoom.id);
@@ -100,7 +123,7 @@ if (user.role !== 'admin') {
   requestHeaders.set('x-internal-secret', c.env.INTERNAL_MODERATION_SECRET);
   requestHeaders.set('x-user-id', session.user_id as string);
   requestHeaders.set('x-user-nickname', nickname);
-  requestHeaders.set('x-user-role', user.role);
+  requestHeaders.set('x-user-role', role);
   requestHeaders.set('x-user-avatar', session.user_id as string);
   requestHeaders.set('x-room-id', canonicalRoom.id);
 
@@ -156,7 +179,7 @@ app.get('/api/rooms/:roomId/messages', async (c) => {
 
 app.get('/api/roulette/ws', async (c) => {
   // Authenticate session
-  const sessionId = c.req.header('cookie')?.split('session_id=')[1]?.split(';')[0];
+  const sessionId = extractSessionId(c);
   if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
   const session = await c.env.DB.prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?')
     .bind(sessionId, Date.now()).first();
@@ -204,6 +227,130 @@ export function calculateAgeUTC(dobString: string): number {
   return age;
 }
 
+const SUGGESTED_PREFIXES = [
+  'Dhaka_Dreamer', 'Bengal_Tiger', 'Padma_Breeze', 'Kolkata_Rhythm',
+  'Mystic_Desi', 'Night_Owl', 'Velvet_Soul', 'Chai_Lover',
+  'Sylhet_Starlight', 'Chittagong_Vibe', 'Moonlight_BD', 'Desi_Flirt',
+  'Secret_Smiles', 'Sunkissed_Bengali', 'Silent_Gaze', 'Urban_Lover'
+];
+
+export function generateSuggestedNickname(): string {
+  const prefix = SUGGESTED_PREFIXES[Math.floor(Math.random() * SUGGESTED_PREFIXES.length)];
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${prefix}_${num}`;
+}
+
+app.get('/api/webrtc/config', (c) => {
+  const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ];
+
+  const env = c.env as any;
+  if (env?.TURN_URL) {
+    iceServers.push({
+      urls: env.TURN_URL,
+      username: env.TURN_USERNAME,
+      credential: env.TURN_CREDENTIAL
+    });
+  }
+
+  return c.json({ iceServers });
+});
+
+app.get('/api/auth/suggest-nickname', (c) => {
+  return c.json({ nickname: generateSuggestedNickname() });
+});
+
+app.post('/api/auth/session', async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Malformed JSON payload' }, 400);
+  }
+
+  const { nickname, isAdultConfirmed, termsAccepted, gender, dateOfBirth, isGenderVisible } = body || {};
+
+  if (!isAdultConfirmed) {
+    return c.json({ error: 'You must confirm that you are at least 18 years of age to enter.' }, 400);
+  }
+  if (!termsAccepted) {
+    return c.json({ error: 'You must accept the Terms of Service & Privacy Policy to enter.' }, 400);
+  }
+
+  const validGenders = ['male', 'female', 'non-binary', 'prefer-not-to-say'];
+  const cleanGender = (gender || 'prefer-not-to-say').toLowerCase().trim();
+  if (!validGenders.includes(cleanGender)) {
+    return c.json({ error: 'Please select a valid gender option.' }, 400);
+  }
+
+  if (!dateOfBirth) {
+    return c.json({ error: 'Date of birth is required for age verification.' }, 400);
+  }
+  if (!isValidCalendarDate(dateOfBirth)) {
+    return c.json({ error: 'Invalid date of birth format or impossible calendar date' }, 400);
+  }
+  const age = calculateAgeUTC(dateOfBirth);
+  if (age < 0) {
+    return c.json({ error: 'Future date of birth is not allowed' }, 400);
+  }
+  if (age < 18) {
+    return c.json({ error: 'Access denied. You must be at least 18 years old to enter.' }, 403);
+  }
+
+  const trimmed = (nickname || '').trim();
+  if (!trimmed || trimmed.length < 3 || trimmed.length > 20) {
+    return c.json({ error: 'Nickname must be between 3 and 20 characters.' }, 400);
+  }
+
+  const sessionId = crypto.randomUUID();
+  const userId = `usr_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+  const avatarSeed = `avatar-${Math.floor(Math.random() * 10000)}`;
+  const expiresAt = Date.now() + 86400000 * 7; // 7 days
+
+  // Insert guest user into users table so foreign keys and DO lookups succeed
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(
+      userId,
+      `${trimmed.slice(0, 15)}_${userId.slice(-4)}`,
+      `${userId}@chatlustora.internal`,
+      'guest-session',
+      Date.now()
+    ).run();
+  } catch (err) {
+    console.warn('[Guest Session] User insert warning:', err);
+  }
+
+  // Insert into sessions table
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)'
+    ).bind(sessionId, userId, expiresAt).run();
+  } catch (err) {
+    console.error('[Guest Session] Session insert error:', err);
+    return c.json({ error: 'Failed to create guest session in database' }, 500);
+  }
+
+  c.header('Set-Cookie', `session_id=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 86400}`);
+  c.header('Set-Cookie', `chatlustora_session=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 86400}`, { append: true });
+
+  return c.json({
+    success: true,
+    session: {
+      userId,
+      nickname: trimmed,
+      role: 'guest',
+      avatarSeed,
+      gender: cleanGender,
+      isGenderVisible: isGenderVisible !== undefined ? Boolean(isGenderVisible) : true,
+      token: sessionId
+    }
+  }, 200);
+});
+
 app.post('/api/auth/register', async (c) => {
   let body: any;
   try {
@@ -215,6 +362,11 @@ app.post('/api/auth/register', async (c) => {
   const { username, email, password, dateOfBirth } = body || {};
   if (!username || !email || !password || !dateOfBirth) {
     return c.json({ error: 'Missing required fields including date of birth' }, 400);
+  }
+
+  const trimmedUsername = (username || '').trim();
+  if (trimmedUsername.length < 3 || trimmedUsername.length > 20) {
+    return c.json({ error: 'Username must be between 3 and 20 characters.' }, 400);
   }
 
   if (!isValidCalendarDate(dateOfBirth)) {
@@ -231,47 +383,72 @@ app.post('/api/auth/register', async (c) => {
 
   const hash = await hashPassword(password);
   try {
+    const userId = crypto.randomUUID();
     await c.env.DB.prepare('INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), username, email, hash, Date.now())
+      .bind(userId, trimmedUsername, email.trim().toLowerCase(), hash, Date.now())
       .run();
-    return c.json({ success: true });
-  } catch {
+    return c.json({ success: true, userId });
+  } catch (err: any) {
+    const msg = err?.message || '';
+    if (msg.includes('UNIQUE constraint failed: users.email')) {
+      return c.json({ error: 'An account with this email already exists.' }, 409);
+    }
+    if (msg.includes('UNIQUE constraint failed: users.username')) {
+      return c.json({ error: 'Username is already taken.' }, 409);
+    }
     return c.json({ error: 'Registration failed' }, 400);
   }
 });
 
 app.post('/api/auth/login', async (c) => {
-  const { email, password } = await c.req.json();
-  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Malformed JSON payload' }, 400);
+  }
+  const { email, password } = body || {};
+  if (!email || !password) {
+    return c.json({ error: 'Missing credentials' }, 400);
+  }
+
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email.trim().toLowerCase()).first();
   if (!user || !(await verifyPassword(password, user.password_hash as string))) {
     return c.json({ error: 'Invalid credentials' }, 401);
   }
   
   const sessionId = crypto.randomUUID();
   await c.env.DB.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
-    .bind(sessionId, user.id, Date.now() + 86400000)
+    .bind(sessionId, user.id, Date.now() + 86400000 * 7)
     .run();
     
-  return c.json({ success: true }, 200, {
-    'Set-Cookie': `session_id=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400`
-  });
+  c.header('Set-Cookie', `session_id=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 86400}`);
+  c.header('Set-Cookie', `chatlustora_session=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 86400}`, { append: true });
+
+  return c.json({
+    success: true,
+    session: {
+      userId: user.id,
+      nickname: user.username,
+      role: user.role || 'member',
+      avatarSeed: user.id,
+      token: sessionId
+    }
+  }, 200);
 });
 
 app.post('/api/auth/logout', async (c) => {
-  const sessionId = c.req.header('cookie')?.split('session_id=')[1]?.split(';')[0];
-  if (sessionId) await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
-  return c.json({ success: true }, 200, { 'Set-Cookie': 'session_id=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0' });
+  const sessionId = extractSessionId(c);
+  if (sessionId) {
+    await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
+  }
+  c.header('Set-Cookie', 'session_id=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+  c.header('Set-Cookie', 'chatlustora_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0', { append: true });
+  return c.json({ success: true }, 200);
 });
 
-
 app.get('/api/auth/me', async (c) => {
-  const cookieHeader = c.req.header('cookie') || '';
-
-  const sessionId = cookieHeader
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith('session_id='))
-    ?.slice('session_id='.length);
+  const sessionId = extractSessionId(c);
 
   if (!sessionId) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -289,15 +466,26 @@ app.get('/api/auth/me', async (c) => {
   const user = await c.env.DB
     .prepare('SELECT id, username, email, role FROM users WHERE id = ?')
     .bind(session.user_id)
-    .first();
+    .first<{ id: string; username: string; email: string; role?: string }>();
 
   if (!user) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  return c.json(user);
-});
+  const isGuest = user.email?.endsWith('@chatlustora.internal');
+  const role = isGuest ? 'guest' : (user.role || 'member');
 
+  return c.json({
+    id: user.id,
+    userId: user.id,
+    username: user.username,
+    nickname: user.username,
+    email: isGuest ? '' : user.email,
+    role,
+    avatarSeed: user.id,
+    token: sessionId
+  });
+});
 
 /**
  * Moderation read-only APIs.
@@ -305,12 +493,7 @@ app.get('/api/auth/me', async (c) => {
  * never from localStorage or client-provided role/token values.
  */
 async function resolveModerationActor(c: { req: { header: (name: string) => string | undefined }; env: Bindings }) {
-  const cookieHeader = c.req.header('cookie') || '';
-  const sessionId = cookieHeader
-    .split(';')
-    .map((part: string) => part.trim())
-    .find((part: string) => part.startsWith('session_id='))
-    ?.slice('session_id='.length);
+  const sessionId = extractSessionId(c);
 
   if (!sessionId) {
     return { error: 'Unauthorized', status: 401 as const };

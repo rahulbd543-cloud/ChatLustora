@@ -36,9 +36,12 @@ export const WebRTCCallModal: React.FC = () => {
 
   useEffect(() => {
     fetch('/api/webrtc/config')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) return null;
+        return res.json();
+      })
       .then(data => {
-        if (data.iceServers && Array.isArray(data.iceServers)) {
+        if (data?.iceServers && Array.isArray(data.iceServers)) {
           setCustomIceServers(data.iceServers);
         }
       })

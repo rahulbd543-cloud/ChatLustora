@@ -109,6 +109,66 @@ export const AdultGateModal: React.FC = () => {
       return;
     }
 
+    if (mode === 'signup') {
+      if (!email.trim() || !password) {
+        setError(
+          lang === 'bn'
+            ? 'অনুগ্রহ করে ইমেইল ও পাসওয়ার্ড প্রদান করুন।'
+            : 'Please enter your email and password to create an account.'
+        );
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const regRes = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: trimmed,
+            email: email.trim(),
+            password,
+            dateOfBirth
+          })
+        });
+
+        let regData: any = {};
+        const contentType = regRes.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          try {
+            regData = await regRes.json();
+          } catch {
+            regData = {};
+          }
+        }
+
+        if (!regRes.ok || !regData.success) {
+          setError(regData.error || `Registration failed (${regRes.status})`);
+          return;
+        }
+
+        // Automatically log in following successful registration
+        const loginResult = await login({ email: email.trim(), password });
+        if (loginResult?.error || !loginResult?.success) {
+          setError(
+            lang === 'bn'
+              ? 'অ্যাকাউন্ট তৈরি হয়েছে! অনুগ্রহ করে লগইন করুন।'
+              : 'Account created successfully! Please log in.'
+          );
+          setMode('login');
+          return;
+        }
+
+        closeAuthModal();
+      } catch (err: any) {
+        setError(err.message || 'An error occurred during registration.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Guest Mode
     setLoading(true);
 
     try {
@@ -125,10 +185,18 @@ export const AdultGateModal: React.FC = () => {
         })
       });
 
-      const data = await res.json();
+      let data: any = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          data = {};
+        }
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to authenticate.');
+        throw new Error(data.error || `Failed to authenticate (${res.status})`);
       }
 
       setSession(data.session);
@@ -280,6 +348,38 @@ export const AdultGateModal: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {mode === 'signup' && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-text-main">
+                      <span>{lang === 'bn' ? 'ইমেইল এড্রেস' : 'Email Address'}</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="e.g. member@chatlustora.com"
+                      required
+                      className="w-full px-4 py-2.5 rounded-xl bg-black/10 dark:bg-white/5 border border-line focus:border-brand focus:outline-none text-sm font-medium transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-text-main">
+                      <span>{lang === 'bn' ? 'পাসওয়ার্ড' : 'Password'}</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full px-4 py-2.5 rounded-xl bg-black/10 dark:bg-white/5 border border-line focus:border-brand focus:outline-none text-sm font-medium transition-colors"
+                    />
+                  </div>
+                </>
+              )}
 
               {/* Gender Selection */}
               <div className="flex flex-col gap-1.5">

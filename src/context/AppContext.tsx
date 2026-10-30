@@ -126,7 +126,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     // Check auth on mount
     fetch('/api/auth/me')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) return null;
+        return res.json();
+      })
       .then((data: any) => {
         if (data && (data.id || data.userId)) {
           setSession(data);
@@ -136,8 +139,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const register = async (data: any) => {
-    const res = await fetch('/api/auth/register', { method: 'POST', body: JSON.stringify(data), headers: {'Content-Type': 'application/json'} });
-    return await res.json();
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    try {
+      return await res.json();
+    } catch {
+      return { error: `Registration error (${res.status})` };
+    }
   };
 
   const login = async (data: any) => {
@@ -148,7 +159,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       body: JSON.stringify(data)
     });
 
-    const result: any = await res.json();
+    let result: any = null;
+    try {
+      result = await res.json();
+    } catch {
+      return { error: `Login error (${res.status})` };
+    }
 
     if (!res.ok || !result?.success) {
       return result ?? { error: 'Login failed' };
@@ -157,7 +173,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const meRes = await fetch('/api/auth/me', {
       credentials: 'same-origin'
     });
-    const me: any = await meRes.json();
+    let me: any = null;
+    try {
+      me = await meRes.json();
+    } catch {
+      return { error: 'Session could not be verified' };
+    }
 
     if (!meRes.ok || !(me?.id || me?.userId)) {
       return {
