@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 // Quick adult/flirty emoji set for instant insertion
-const EMOJI_PALETTE = ['❤️', '🔥', '😘', '😉', '💋', '😈', '🌹', '🥂', '👀', '✨', '💬', '😍'];
+const EMOJI_PALETTE = ['â¤ï¸', 'ðŸ”¥', 'ðŸ˜˜', 'ðŸ˜‰', 'ðŸ’‹', 'ðŸ˜ˆ', 'ðŸŒ¹', 'ðŸ¥‚', 'ðŸ‘€', 'âœ¨', 'ðŸ’¬', 'ðŸ˜'];
 
 interface RoomParticipant {
   userId: string;
@@ -34,6 +34,7 @@ export const ChatWorkspace: React.FC = () => {
     startCall,
     blockedUsers,
     blockUser,
+    unblockUser,
     setActiveTab
   } = useApp();
 
@@ -44,6 +45,8 @@ export const ChatWorkspace: React.FC = () => {
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [selectedUserAction, setSelectedUserAction] = useState<string | null>(null);
+  const [participantMenuUserId, setParticipantMenuUserId] = useState<string | null>(null);
+  const [participantActionFeedback, setParticipantActionFeedback] = useState<string | null>(null);
   const [reportTarget, setReportTarget] = useState<{
     userId: string;
     nickname: string;
@@ -467,7 +470,7 @@ export const ChatWorkspace: React.FC = () => {
                 title="Click to reconnect"
               >
                 <WifiOff className="w-3.5 h-3.5" />
-                <span>Offline • Reconnect</span>
+                <span>Offline â€¢ Reconnect</span>
               </button>
             )}
 

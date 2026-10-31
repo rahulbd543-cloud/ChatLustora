@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { hashPassword, verifyPassword } from './auth';
 import { getRoomById } from '../../shared/rooms.js';
+import { registerDmRoutes } from './dm';
 
 type Bindings = {
   DB: D1Database;
@@ -33,6 +34,8 @@ export function extractSessionId(c: { req: { header: (name: string) => string | 
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+registerDmRoutes(app);
 
 app.get('/healthz', (c) => c.json({ status: 'ok' }));
 

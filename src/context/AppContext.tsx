@@ -15,6 +15,7 @@ export interface ActiveCallState {
 
 export type NavTab = 'directory' | 'chat' | 'roulette' | 'blog' | 'forum' | 'moderation';
 export type AuthModalMode = 'guest' | 'login' | 'signup' | null;
+export type DmWindowMode = 'floating' | 'minimized' | 'maximized';
 
 export interface AppSession {
   userId: string;
@@ -57,6 +58,8 @@ export interface AppContextType {
   returnUrl: string | null;
   // DMs
   isDmDrawerOpen: boolean;
+  dmWindowMode: DmWindowMode;
+  setDmWindowMode: (mode: DmWindowMode) => void;
   activeDmUserId: string | null;
   activeDmPartnerNickname: string;
   openDmWith: (userId: string, nickname?: string) => void;
@@ -72,8 +75,8 @@ export interface AppContextType {
   endCall: () => void;
   // Blocking & Modals
   blockedUsers: Set<string>;
-  blockUser: (userId: string) => void;
-  unblockUser: (userId: string) => void;
+  blockUser: (userId: string) => Promise<void>;
+  unblockUser: (userId: string) => Promise<void>;
   isInfoModalOpen: boolean;
   infoModalTab: 'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact';
   openInfoModal: (tab: 'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact') => void;
@@ -212,6 +215,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Direct Messaging
   const [isDmDrawerOpen, setIsDmDrawerOpen] = useState<boolean>(false);
+  const [dmWindowMode, setDmWindowMode] = useState<DmWindowMode>('floating');
   const [activeDmUserId, setActiveDmUserId] = useState<string | null>(null);
   const [activeDmPartnerNickname, setActiveDmPartnerNickname] = useState<string>('Chat Partner');
   const [unreadDmCount, setUnreadDmCount] = useState<number>(0);
@@ -219,8 +223,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Calls
   const [activeCall, setActiveCall] = useState<ActiveCallState | null>(null);
 
-  // Blocked users
+  // Blocked users — server is the source of truth.
   const [blockedUsers, setBlockedUsers] = useState<Set<string>>(new Set());
+
+  const refreshBlockedUsers = useCallback(async () => {
+    if (!session?.userId) {
+      setBlockedUsers(new Set());
+      return;
+    }
+
+    const response = await fetch('/api/user/blocks', {
+      method: 'GET',
+      credentials: 'same-origin'
+    });
+
+    if (!response.ok) {
+      throw new Error('Unable to load blocked users.');
+    }
+
+    const data = await response.json();
+    const ids = Array.isArray(data.blockedUsers) ? data.blockedUsers : [];
+
+    setBlockedUsers(new Set(
+      ids.filter((id: unknown): id is string =>
+        typeof id === 'string' && id.length > 0
+      )
+    ));
+  }, [session?.userId]);
+
+  useEffect(() => {
+    refreshBlockedUsers().catch(error => {
+      console.warn('[AppContext] Could not refresh blocked users:', error);
+    });
+  }, [refreshBlockedUsers]);
 
   // Auth modal state
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode>(null);
@@ -336,10 +371,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveDmPartnerNickname(nickname);
     }
     setIsDmDrawerOpen(true);
+    setDmWindowMode('floating');
   };
 
   const openDmDrawer = () => {
     setIsDmDrawerOpen(true);
+    setDmWindowMode('floating');
   };
 
   const closeDm = () => {
@@ -390,30 +427,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveCall(null);
   };
 
-  const blockUser = (userId: string) => {
-    setBlockedUsers(prev => new Set(prev).add(userId));
-    fetch('/api/user/block', {
+  const blockUser = async (userId: string): Promise<void> => {
+    if (!session?.userId || !userId || userId === session.userId) {
+      throw new Error('Invalid user to block.');
+    }
+
+    const response = await fetch('/api/user/block', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetId: userId })
-    }).catch(() => {});
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Unable to block this user.');
+    }
+
+    setBlockedUsers(prev => new Set(prev).add(userId));
   };
 
-  const unblockUser = (userId: string) => {
+  const unblockUser = async (userId: string): Promise<void> => {
+    if (!session?.userId || !userId) {
+      throw new Error('Invalid user to unblock.');
+    }
+
+    const response = await fetch('/api/user/unblock', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetId: userId })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Unable to unblock this user.');
+    }
+
     setBlockedUsers(prev => {
       const next = new Set(prev);
       next.delete(userId);
       return next;
     });
-    fetch('/api/user/unblock', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ targetId: userId })
-    }).catch(() => {});
   };
 
   const openInfoModal = (tab: 'terms' | 'privacy' | 'guidelines' | 'safety' | 'contact') => {
@@ -447,6 +502,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleTheme,
         globalPresence,
         isDmDrawerOpen,
+        dmWindowMode,
+        setDmWindowMode,
         activeDmUserId,
         activeDmPartnerNickname,
         openDmWith,
